@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Bridge Lab · Desktop Auditor</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#overview"><span class="brand-icon">B<span>↗</span></span><span>Bridge Lab<small>DESKTOP AUDITOR</small></span></a>
+    <div class="nav-label">测试工作台</div>
+    <nav id="navigation" aria-label="能力分组"></nav>
+    <div class="sidebar-footer"><span class="connection-dot"></span><span id="connection">正在检测 Desktop…</span><small>LOCAL TEST APPLICATION · v0.4.0</small></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>Desktop <span class="slash">/</span> WebApp Bridge</span><div class="host-meta"><span id="theme-meta">主题 —</span><span id="locale-meta">语言 —</span><span id="version-meta" class="badge">SDK —</span></div></header>
+    <section id="overview" class="section overview">
+      <div class="eyebrow">BRIDGE CAPABILITY WORKBENCH</div>
+      <div class="heading-row"><div><h1>让每一次调用，都可验证。</h1><p>检查宿主能力，调试 Agent，验证前后端通道。</p></div><div class="toolbar"><label class="check-label"><input id="report-details" type="checkbox">报告包含脱敏详情</label><button id="export-report" class="secondary">导出报告 ↓</button><button id="run-all" class="primary">一键测试 <span>↗</span></button><button id="run-page" class="secondary">前端只读自检</button><button id="stop-tests" disabled>停止测试</button></div></div>
+      <div id="environment-notice" class="notice" role="status">正在加载宿主 SDK…</div>
+      <div id="summary" class="summary" aria-live="polite"></div>
+      <div class="overview-bottom"><span><i class="tiny-dot"></i> 一键测试只运行只读接口与传输探针；模型、原生界面和预留方法需手动验收</span><span id="last-check">尚未运行</span></div>
+      <div id="suite-status" role="status" aria-live="polite">一键测试尚未运行</div><progress id="suite-progress" value="0" max="1" aria-label="一键测试进度"></progress><details class="contract-details"><summary>本轮逐项结果</summary><div id="suite-results"></div></details>
+      <details class="contract-details"><summary>契约版本与能力覆盖</summary><pre id="contract-info">尚未读取构建信息</pre><div id="coverage-info"></div></details>
+    </section>
+    <section id="workflow" class="section">
+      <div class="section-heading"><div><span class="eyebrow">WORKFLOW / 关联验收</span><h2>从聊天到真实产物</h2><p>先准备数据，再沿同一份返回结果测试下游。前后端共享本应用的 Chat，原生预览和另存为由前端发起。</p></div><label class="inline-label">调用通道<select id="agent-channel"><option value="page">前端 SDK</option><option value="backend">后端 SDK</option></select></label></div>
+      <div class="notice"><div id="agent-status" role="status">正在读取智能体配置…</div><div class="button-row"><button id="agent-refresh">刷新配置</button></div><label id="agent-backend-consent" class="check-label" hidden><input id="agent-backend-writes" type="checkbox">允许本次手动后端调用产生副作用</label></div>
+      <ol class="workflow-steps"><li>检查连接并在 Desktop 设置选择有文件工具的 Agent</li><li>发起产物任务，等待文件实际发布</li><li>选择返回的 Chat 和文件，验证元数据、内容及预览</li></ol>
+      <div class="workspace-grid">
+        <article class="panel"><h3>1 · 准备测试数据</h3><p class="hint">使用上方选择的调用通道。此步骤会调用模型；产物需要 file_write 与 artifact_publish，通常使用 GENERAL / CODER。EXECUTOR 不一定具备发布工具。</p>
+          <label for="artifact-prompt">文件任务（可修改）</label><textarea id="artifact-prompt" rows="5">请创建可下载的 Markdown 文件 bridge-lab-verification.md，正文包含标题“Bridge Lab 验收”、一张含商品 A 80 元与商品 B 48 元的表格，以及总额 128 元。请实际写入当前 Chat 的文件，再调用 artifact_publish 发布，最终回复使用工具返回的真实下载链接。如果没有文件写入或发布工具，请明确说明，不要仅在回复里展示正文，也不要编造文件链接或标识。</textarea>
+          <div class="button-row"><button id="workflow-check">检查连接</button><button id="prepare-artifacts" class="primary">生成测试产物</button><button id="workflow-unsubscribe">中止等待</button></div><pre id="workflow-result" class="output" aria-live="polite">点击「生成测试产物」将新建聊天；只查询不会生成文件。不会自动重发任务。</pre>
+        </article>
+        <article class="panel"><h3>2 · 选择真实结果</h3><label for="artifact-chat">本页实际发起的 Chat</label><select id="artifact-chat"></select><div class="button-row"><button id="refresh-artifacts">刷新产物列表</button><button id="more-artifacts">加载下一页</button></div>
+          <label for="artifact-choice">已发布的文件（来自所选 Chat）</label><select id="artifact-choice"></select><div id="artifact-context" class="identity"></div><p id="artifact-readiness" class="hint" role="status"></p>
+          <div class="button-row"><button id="artifact-inspect" class="primary">验证元数据和内容</button><button id="artifact-preview">在 Desktop 预览</button><button id="artifact-save">另存为</button><button id="artifact-to-execute">将已读内容带入 execute</button></div><p class="hint">读到完整文本后，可将真实内容带入执行区，再手动执行结构化提取。产物发布和 result_submit 需要 Agent 分别具备对应工具。</p><pre id="artifact-result" class="output" aria-live="polite">尚未选择产物</pre>
+        </article>
+      </div>
+    </section>
+    <section id="assistant" class="section">
+      <div class="section-heading"><div><span class="eyebrow">02 / ASSISTANT</span><h2>Agent 聊天与执行</h2><p>使用上方关联流程选择的调用通道；原生方法卡片始终由前端调用。</p></div></div>
+      <div class="workspace-grid">
+        <article class="panel"><div class="panel-heading"><h3>聊天测试</h3><span class="badge">QUERY</span></div>
+          <label for="chat-message">消息</label><textarea id="chat-message" rows="4">请只回复：Bridge Lab 连接成功。</textarea>
+          <label for="chat-skills">技能与挂载状态 <span class="muted">可附加的项可按 Ctrl / ⌘ 多选</span></label><select id="chat-skills" multiple size="2" aria-label="聊天技能"></select><p class="hint">刷新可读取实际技能目录。Agent 已挂载技能自动生效；包内声明的附加引用才可手动选择，其余条目只显示挂载状态。</p>
+          <div class="button-row"><button id="chat-sync" class="primary">同步聊天</button><button id="chat-background">后台聊天</button><button id="chat-history">查看本次对话历史</button><button id="load-skills" class="text-button">刷新技能</button></div>
+          <p class="hint">同步聊天可能受 120 秒超时限制；长任务使用后台模式。普通聊天仅验证回复；需要文件请先运行上方「生成测试产物」。</p>
+          <div class="run-controls"><button id="subscribe-run">订阅 / 续订</button><button id="abort-subscription">中止订阅</button><button id="stop-run" class="danger">停止 run</button></div>
+          <div id="chat-identity" class="identity">chatId — · runId —</div><pre id="chat-text" class="output chat-output" aria-live="polite">等待消息</pre>
+          <div class="event-result"><h4>事件流（最近 256 条）</h4><pre id="chat-events" class="output"></pre></div>
+        </article>
+        <article class="panel"><div class="panel-heading"><h3>结构化执行</h3><span class="badge">EXECUTE</span></div>
+          <p class="hint">需要支持 result_submit 的 Native Agent；不支持时请切换智能体，宿主不会自动换成其他智能体。</p>
+          <label for="execute-message">任务说明</label><textarea id="execute-message" rows="2">提取订单金额；无法识别时提交 failure。</textarea>
+          <label for="execute-input">input JSON（可留空）</label><textarea id="execute-input" class="code-input" rows="3">{"text":"订单总额 128 元"}</textarea>
+          <label for="execute-schema">outputSchema JSON</label><textarea id="execute-schema" class="code-input" rows="5">{"type":"object","properties":{"amount":{"type":"number"}},"required":["amount"],"additionalProperties":false}</textarea>
+          <div class="button-row"><button id="execute-run" class="primary">执行任务 ↗</button><button id="execute-cancel">取消执行</button><button id="execute-history">查看执行对话历史</button><button id="execute-copy" class="text-button">复制请求</button></div>
+          <pre id="execute-result" class="output" aria-live="polite">等待执行</pre>
+        </article>
+      </div>
+      <div class="method-details"><h3>Assistant 方法卡片与图片测试</h3><div data-cards="assistant" class="cards"></div></div>
+    </section>
+    <div id="capability-sections"></div>
+    <section id="backend" class="section">
+      <div class="section-heading"><div><span class="eyebrow">12 / BACKEND</span><h2>后端通道</h2><p>受管 Node 后端使用打包时复制的正式 SDK，凭据留在后端进程。</p></div><button id="backend-read-check">后端只读自检</button></div>
+      <div class="workspace-grid">
+        <article class="panel"><h3>HTTP / Backend SDK</h3><div class="button-row"><button id="backend-health">Health</button><button id="backend-env">环境变量存在性</button></div>
+          <label class="check-label"><input id="backend-writes" type="checkbox">允许本次手动后端调用产生副作用</label>
+          <p class="hint">聊天、结构化执行、停止 run、connector.invoke 需要打开此开关。只读自检不会使用它。</p>
+          <p class="hint">此处仅提供受管后端已实现的方法；文件选择、登录、图片生成、预览和另存为使用前端入口。</p><label for="backend-action">Action</label><select id="backend-action"></select><p id="backend-readiness" class="hint" role="status"></p>
+          <label for="backend-args">参数 JSON</label><textarea id="backend-args" class="code-input" rows="5">{}</textarea>
+          <div class="button-row"><button id="backend-call" class="primary">调用后端</button><button id="backend-cancel">取消请求</button></div><pre id="backend-result" class="output" aria-live="polite">等待调用</pre>
+        </article>
+        <article class="panel"><div class="panel-heading"><h3>WebSocket 回声</h3><span id="ws-state" class="badge">已关闭</span></div><p class="hint">通过 gateway 的 /api/ws 验证连接、文本回声、关闭。上限 64 KiB，仅支持完整文本帧。</p>
+          <label for="ws-message">消息</label><textarea id="ws-message" rows="4">Hello from Bridge Lab</textarea>
+          <div class="button-row"><button id="ws-connect">连接</button><button id="ws-send" class="primary">发送</button><button id="ws-close">关闭</button></div><pre id="ws-result" class="output" aria-live="polite">等待连接</pre>
+        </article>
+      </div>
+    </section>
+    <footer class="page-footer"><span>BRIDGE LAB / ZENMIND DESKTOP AUDITOR</span><span>真实调用 · 明确结果 · 可导出证据</span></footer>
+  </main>
+</body>
+</html>

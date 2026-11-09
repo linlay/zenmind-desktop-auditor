@@ -1,0 +1,25 @@
+# Dependencies and generated artifacts
+**/node_modules/
+**/build/
+**/dist/
+**/output/
+**/test-output/
+**/coverage/
+**/.cache/
+
+# Local configuration and credentials
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs and editor / OS files
+*.log
+*.tsbuildinfo
+.idea/
+.DS_Store
+Thumbs.db

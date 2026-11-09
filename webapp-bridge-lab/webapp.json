@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "id": "webapp-72eb6f709c8a4d15",
+  "key": "bridge-lab",
+  "label": "Bridge Lab",
+  "version": "0.4.0",
+  "target": "any",
+  "appConfig": {
+    "purpose": "Desktop Bridge capability verification",
+    "sample": {
+      "enabled": true,
+      "count": 3
+    }
+  },
+  "userConfig": {
+    "fields": [
+      {
+        "name": "agent",
+        "label": "测试 Agent",
+        "description": "聊天使用默认助手；结构化执行需要选择支持 result_submit 的 Native Agent。",
+        "type": "select",
+        "source": "desktop.agents"
+      }
+    ]
+  },
+  "frontend": {
+    "root": "frontend",
+    "index": "index.html",
+    "routeConfig": {
+      "backendPrefixes": [
+        "/api"
+      ]
+    }
+  },
+  "backend": {
+    "command": {
+      "type": "electron-node",
+      "entry": "backend/server.mjs"
+    },
+    "health": {
+      "type": "http",
+      "path": "/api/health",
+      "startupTimeoutMs": 10000
+    },
+    "shutdownTimeoutMs": 3000
+  }
+}
