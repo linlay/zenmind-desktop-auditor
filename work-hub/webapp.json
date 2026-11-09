@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "id": "webapp-0a3e2220ac9c3d2e",
+  "key": "work-hub",
+  "label": "Work Hub",
+  "version": "0.1.0",
+  "target": "any",
+  "appConfig": {
+    "purpose": "Browser-first project and task management with Platform intelligence"
+  },
+  "frontend": {
+    "root": "frontend",
+    "index": "index.html",
+    "routeConfig": {
+      "backendPrefixes": [
+        "/api"
+      ]
+    }
+  },
+  "backend": {
+    "command": {
+      "type": "electron-node",
+      "entry": "backend/server.mjs"
+    },
+    "health": {
+      "type": "http",
+      "path": "/api/health",
+      "startupTimeoutMs": 10000
+    },
+    "shutdownTimeoutMs": 3000
+  }
+}
