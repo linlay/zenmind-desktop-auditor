@@ -14,6 +14,7 @@ export function validateGraph(graph, { draft = false } = {}) {
     if (byId.has(node.id)) fail(`节点 ID 重复：${node.id}`);
     byId.set(node.id, node);
     if (node.type === 'agent') {
+      if (node.config.agentKey !== undefined && (typeof node.config.agentKey !== 'string' || node.config.agentKey.length > 256)) fail(`${node.label}：Agent key 不合法。`);
       if (typeof node.config.message !== 'string' || (!draft && !node.config.message.trim()) || node.config.message.length > 12000) fail(`${node.label}：任务说明需要 1–12000 个字符。`);
       if (!object(node.config.outputSchema) || node.config.outputSchema.type !== 'object' || jsonBytes(node.config.outputSchema) > 65536) fail(`${node.label}：结果 Schema 根类型必须为 object，且不超过 64 KiB。`);
     }

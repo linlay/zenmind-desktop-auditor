@@ -3,21 +3,10 @@
   "id": "webapp-2a2b2dd9766e2390",
   "key": "dag-lab",
   "label": "DAG Lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "target": "any",
   "appConfig": {
-    "purpose": "Agent DAG workflow laboratory"
-  },
-  "userConfig": {
-    "fields": [
-      {
-        "name": "agent",
-        "label": "工作流 Agent",
-        "description": "选择具备 result_submit 工具的 Native Agent；所有智能体节点共用此 Agent。",
-        "type": "select",
-        "source": "desktop.agents"
-      }
-    ]
+    "purpose": "Browser-first DAG workflows powered by Platform HTTP Bridge"
   },
   "frontend": {
     "root": "frontend",

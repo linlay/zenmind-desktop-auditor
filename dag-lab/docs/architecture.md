@@ -1,27 +1,25 @@
-# DAG Lab 架构与运行边界
+# 浏览器与 Platform 能力边界
 
-## 所有权
+## 数据流与所有权
 
-页面拥有草稿编辑、图形布局、当前选择和显示；受管 electron-node 后端拥有已保存流程、不可变运行快照、调度和历史记录；Desktop 拥有 Agent 选择、模型访问、执行取消与对话弹窗。WebApp 不获取宿主凭据，也不注册 Plugin Bridge 的系统窗口。
+Desktop 仅托管 electron-node 进程并注入监听端口、程序和数据目录。浏览器访问本机应用，后端同时提供静态页面与业务 API。链路为：浏览器 → DAG Lab 同源接口 → Platform 公开 HTTP API。前端不加载 /__desktop/，不依赖 preload；后端不读取 Desktop 身份文件、不使用 Desktop Action Bridge。
 
-只有用户点击运行才创建一次 DAG 运行。后端在接收前校验完整 DAG、图版本和已有运行；开始后冻结流程。编辑草稿不改变已开始运行，历史记录只读，导出快照不自动恢复授权。
+Platform Bridge 是应用的契约适配器，固定提供 Agent 目录、execute 和 Chat 读取，不开放任意 URL/path/action 代理。Platform 现有 WebApp 托管 SDK 仅适用于 Linux Compose，本应用无需该能力。
 
-## DAG 与数据
+## 凭据与执行身份
 
-节点 ID 唯一，连线必须连接已有节点，输入无父节点、输出无子节点。禁止循环，完整流程的所有分支必须连接输出。节点按稳定拓扑顺序执行；一个节点成功后才交付其结果。上游数据以 `input.upstream` 对象交给智能体，键是来源节点 ID。汇总保留每路结果，不执行任意表达式或脚本。
+用户在本机网页显式设置地址和 token，真实读取 Agent 目录验证后才替换连接。令牌只留后端内存，仅持久化非敏感地址及默认 Agent；也可由应用启动环境显式注入。凭据不进入日志、流程、运行记录、响应、安装包或导出。Platform 验证身份，应用不通过解码 JWT 假装验签，也不扫描宿主凭据。
 
-智能体节点仅调用正式 `assistant.execute({message,input,outputSchema},{signal})`。节点提示词和 Schema 可独立配置；Agent 身份由本应用宿主设置选择，不在请求里发送 agentKey、skillIds 或任意路由。使用串行调度，同一应用最多一个 DAG 活动运行，避免多分支同时占用宿主执行通道。智能体业务 failure、非法响应与超限都停止整轮，下游及尚未开始分支标为跳过，不自动重试。
+本机 HTTP 仅允许 loopback，远程需要 HTTPS；拒绝 URL 凭据、查询、片段和重定向。业务 API 校验本机 Host、精确 Origin、自定义请求头与固定路由，拒绝局域网、Tunnel 和跨源借用本机权限。
 
-## 状态与持久化
+连接变更与运行互斥，避免节点间更换主体或实例。每轮冻结各节点实际 Agent key，默认与节点覆盖均来自真实目录；是否具有 result_submit 由 Platform execute 准入判断，不按 mode 推断。不会自动提高 accessLevel。
 
-运行：running → succeeded / failed / cancelled；取消期间为 cancelling。后端进程重启时将未终结记录标为 interrupted，不从磁盘重新执行节点。节点分别记录 pending、running、succeeded、failed、cancelled、interrupted、skipped。真实 Chat ID 只从 execute 回执保存，不从输出内容猜测。
+## DAG、状态与数据
 
-页面轮询状态，刷新仅重新读取后端记录；关闭页面不取消后端执行。显式取消通过 AbortSignal 传递到当前 SDK 调用。停止应用会请求取消并持久化；被强制杀死时，下次启动标记中断。取消不回滚已经发生的外部操作。
+页面拥有草稿，后端拥有快照、拓扑调度及记录，Platform 拥有 Agent/Run/Chat。智能体请求只传 agentKey、message、input.upstream、outputSchema；结果原样交付下游，超限明确失败。失败和取消停止本轮，不自动重试，不回滚已执行操作。
 
-数据只写入 Desktop 注入的应用数据根。文件通过临时文件＋rename 发布，写入在进程内串行。macOS 与 Windows 使用 Node 的同目录替换，不先删除旧数据；失败显式报告，不覆盖最后一份有效文件。保存流程使用 revision 防止另一页面静默覆盖。程序升级与用户数据分离。
+运行 running → succeeded/failed/cancelled；取消中为 cancelling，后端重启将未终结记录标 interrupted。取消用 AbortSignal 断开 Platform execute，遵守其断开即中断契约。刷新仅重新读取状态，不重发模型任务。
 
-## 访问与证据
+对话通过 Platform /api/chat 读取并在网页展示；只接受本应用实际回执中的 Chat ID，不透传资源票据。Platform 权限仍是最终边界。
 
-业务 API 只服务本机，校验 loopback Host、网关来源、精确 Origin、自定义请求头和固定路由；拒绝局域网、Tunnel 和跨源借用后端的宿主身份。客户端无法指定文件路径、进程命令或任意 SDK action。后端凭据不返回页面、写日志或进入安装包。
-
-执行记录包含用户输入、业务输出和 Chat 身份，仅存在本机应用数据根；只有用户显式导出时才生成结果文件。JSON 导入只是加载草稿，不执行。源码测试用受控业务响应验证边界，与真实 Desktop 的模型验收分开记录，未连接宿主不模拟智能体成功。
+数据只写应用数据根，同目录临时文件加 rename 发布，进程内串行保存；revision 检测页面冲突。Windows/macOS 使用 Node 路径与文件 API，程序打包替换有明确平台分支。用户数据独立于程序升级。记录包含业务内容，仅用户主动导出时生成文件，凭据不进入记录。

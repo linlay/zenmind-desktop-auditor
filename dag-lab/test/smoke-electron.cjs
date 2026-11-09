@@ -15,40 +15,31 @@ const watchdog = setTimeout(() => { console.error('Smoke exceeded 90 seconds'); 
 app.whenReady().then(async () => {
   const index = JSON.parse(fs.readFileSync(path.join(root, 'build/bundle.json'))), bundle = path.join(root, 'build', index.packagePath), manifest = JSON.parse(fs.readFileSync(path.join(bundle, 'webapp.json')));
   const { createServer } = await import(pathToFileURL(path.join(bundle, 'backend/server.mjs')));
-  bridge = http.createServer(async (req, res) => {
+  bridge = http.createServer(async (req,res) => {
     try {
-      const chunks = []; for await (const chunk of req) chunks.push(chunk); const input = JSON.parse(Buffer.concat(chunks)); calls.push(input);
-      assert.ok(['Bearer synthetic-dag-page', 'Bearer synthetic-dag-backend'].includes(req.headers.authorization));
-      let result;
-      if (input.action === 'desktop.theme.get') result = { themeMode: 'light', resolvedTheme: 'light' };
-      else if (input.action === 'desktop.chat.open') result = { chatId: input.args.chatId, status: 'opened' };
-      else if (input.action === 'assistant.execute') {
-        assert.equal(req.headers.authorization, 'Bearer synthetic-dag-backend'); assert.equal(input.args.agentKey, undefined); assert.equal(input.args.skillIds, undefined); assert.equal(input.args.outputSchema.type, 'object'); execution++;
-        if (hold) { res.on('close', () => { cancelled++; }); return; }
-        result = { chatId: 'dag-fixture-chat-' + execution, status: 'success', output: { summary: input.args.message.includes('执行建议') || input.args.input.upstream.merge ? '综合执行建议' : input.args.message.includes('实施风险') ? '两周工期存在风险' : '核心需求已提取', items: ['真实传输结果-' + execution] } };
-      } else throw Error('Unexpected action: ' + input.action);
-      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, result }));
-    } catch (error) { errors.push(error.stack); if (!res.headersSent) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: { code: 'fixture_error', message: error.message } })); } }
+      assert.equal(req.headers.authorization,'Bearer synthetic-platform-token'); let data;
+      if(req.url.startsWith('/api/agents')) data=[{key:'agent-a',name:'分析 Agent',engine:'native'},{key:'agent-b',name:'风险 Agent',engine:'native'}];
+      else if(req.url.startsWith('/api/chat?')) {const chatId=new URL(req.url,'http://fixture').searchParams.get('chatId');calls.push({action:'platform.chat',args:{chatId}});data={chatId,chatName:'节点对话',events:[{type:'content.message',text:'节点任务已经完成'}]};}
+      else {assert.equal(req.url,'/api/execute');const chunks=[];for await(const chunk of req)chunks.push(chunk);const args=JSON.parse(Buffer.concat(chunks));calls.push({action:'assistant.execute',args});assert.ok(['agent-a','agent-b'].includes(args.agentKey));execution++;if(hold){res.on('close',()=>cancelled++);return;}data={chatId:'dag-fixture-chat-'+execution,status:'success',output:{summary:args.input.upstream.merge?'综合执行建议':args.message.includes('实施风险')?'两周工期存在风险':'核心需求已提取',items:['真实传输结果-'+execution]}};}
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({code:0,msg:'success',data}));
+    }catch(error){errors.push(error.stack);res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({code:500,msg:'fixture_error'}));}
   });
   const bridgeOrigin = await listen(bridge);
-  backend = await createServer({ directory: path.join(output, 'data'), env: { DESKTOP_ACTION_BRIDGE_URL: bridgeOrigin + '/webapps', DESKTOP_ACTION_BRIDGE_TOKEN: 'synthetic-dag-backend' } });
+  backend = await createServer({ directory: path.join(output, 'data'), env: {} });
   const backendOrigin = await listen(backend);
-  const userPaths = require(path.join(desktop, 'dist-electron/main/infrastructure/filesystem/user-paths.js'));
-  userPaths.getDesktopWebappStateRoot = (_, id) => path.join(output, 'webapp-state', id);
-  userPaths.getDesktopWebappsDataRoot = () => path.dirname(bundle);
-  userPaths.getDesktopWebappDataRoot = (_, id) => path.join(output, 'webapp-data', id);
-  userPaths.getDesktopWebsConfigRoot = () => path.join(output, 'web-config');
-  gateway = await require(path.join(desktop, 'dist-electron/main/modules/webs/webapps/gateway.js')).startWebappGateway({ app, item: { ...manifest, allowLanAccess: false }, webappDir: bundle, backendUrl: backendOrigin, pageActionToken: 'synthetic-dag-page', integrationPorts: { getConfiguredDesktopActionBridgePort: () => bridge.address().port } });
   win = new BrowserWindow({ show: false, width: 1520, height: 1100, useContentSize: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, partition: 'dag-lab-smoke' } });
   win.webContents.on('console-message', event => { if ((event.level === 'error' || event.level === 3) && !/404|Failed to load resource/.test(event.message)) errors.push(event.message); });
-  await win.loadURL(gateway.webUrl); await until(() => js('document.body.dataset.ready === "true"'), 'initial UI');
-  assert.equal(await js('document.querySelectorAll(".dag-node").length'), 6); assert.equal(await js('document.getElementById("run").disabled'), false);
-  check('installed WebApp loads its node editor and official page SDK through the real Desktop Gateway');
+  const browserRequests=[];win.webContents.session.webRequest.onBeforeRequest((details,callback)=>{browserRequests.push(details.url);callback({});});
+  await win.loadURL(backendOrigin); await until(() => js('document.body.dataset.ready === "true"'), 'initial UI');
+  assert.equal(await js('document.querySelectorAll(".dag-node").length'), 6); assert.equal(await js('document.getElementById("run").disabled'), true);
+  await click('connect-platform');await value('platform-url',bridgeOrigin);await value('platform-token','synthetic-platform-token');await js('document.getElementById("platform-form").requestSubmit()');await until(()=>js('!document.getElementById("platform-dialog").open && !document.getElementById("run").disabled'),'Platform connection');
+  await js('document.querySelector(".dag-node[data-id=risks]").click()');await value('node-agent','agent-b');await js('document.getElementById("node-form").requestSubmit()');
+  check('ordinary browser loads the complete app directly, connects to Platform and selects a per-node Agent without Desktop Bridge');
   await click('run'); await until(() => js('document.getElementById("run-status").dataset.status === "succeeded"'), 'Agent DAG result');
   assert.equal(execution, 3); const executions = calls.filter(call => call.action === 'assistant.execute'); assert.ok(executions[2].args.input.upstream.merge.extract); assert.ok(executions[2].args.input.upstream.merge.risks);
   assert.match(await text('run-output'), /综合执行建议/); assert.equal(backend.store.value.runs.length, 1);
-  await js('document.querySelectorAll(".run-node")[2].click()'); await js('document.querySelector("#run-output button").click()'); await until(() => calls.some(call => call.action === 'desktop.chat.open'), 'node chat history');
-  assert.equal(calls.filter(call => call.action === 'desktop.chat.open').at(-1).args.chatId, 'dag-fixture-chat-1');
+  await js('document.querySelectorAll(".run-node")[2].click()'); await js('document.querySelector("#run-output button").click()'); await until(() => calls.some(call => call.action === 'platform.chat'), 'node chat history');
+  assert.equal(calls.filter(call => call.action === 'platform.chat').at(-1).args.chatId, 'dag-fixture-chat-1');assert.match(await text('chat-content'),/节点任务已经完成/);await click('close-chat');assert.deepEqual(calls.filter(call=>call.action==='assistant.execute').map(call=>call.args.agentKey),['agent-a','agent-b','agent-a']);
   await js('document.querySelectorAll(".run-node")[0].click()'); await click('fit'); await pause(120); fs.writeFileSync(path.join(output,'dag-success.png'),(await win.webContents.capturePage()).toPNG());
   check('three Agent nodes execute with real wire inputs, merged outputs and the exact returned Chat history identity');
   await win.reload(); await until(() => js('document.body.dataset.ready === "true"'), 'reload'); assert.equal(execution, 3); assert.equal(await js('document.querySelectorAll(".history-item").length'), 1);
@@ -67,7 +58,7 @@ app.whenReady().then(async () => {
   check('the data-only DAG joins two real inputs without any Agent invocation');
   await js('document.querySelector("[data-template=review]").click()'); await click('save'); await until(() => text('save-state').then(value => value === '已保存'), 'review saved'); hold = true; await click('run'); await until(() => execution === 4, 'pending Agent'); await click('cancel'); await until(() => js('document.getElementById("run-status").dataset.status === "cancelled"'), 'cancelled DAG'); await until(() => cancelled > 0, 'SDK disconnected'); hold = false;
   assert.equal(backend.store.value.runs[0].nodes.risks.status, 'skipped');
-  check('cancel disconnects the official backend execute request and skips all unstarted nodes');
+  check('cancel disconnects the direct Platform execute request and skips all unstarted nodes');
   await js('document.querySelector(".history-item").click()'); await until(() => js('document.getElementById("workflow-name").readOnly'), 'history snapshot'); assert.equal(await js('document.getElementById("run").disabled'), true); await click('new-workflow'); assert.equal(await js('document.getElementById("workflow-name").readOnly'), false);
   check('run history snapshots are read-only and returning to the editor preserves the draft');
   // Import/export use actual browser File and Blob interfaces, with only the file picker replaced.
@@ -83,6 +74,7 @@ app.whenReady().then(async () => {
   check('editor, node inspector and execution results fit desktop, narrow and mobile layouts');
   preview = await createServer({ directory: path.join(output,'preview-data'), preview:true, frontendRoot:path.join(bundle,'frontend'), env:{} }); const previewOrigin=await listen(preview); await win.loadURL(previewOrigin); await until(()=>js('document.body.dataset.ready === "true"'),'offline preview'); assert.equal(await js('document.getElementById("run").disabled'),true); await js('document.querySelector("[data-template=data]").click()'); await click('run'); await until(()=>js('document.getElementById("run-status").dataset.status === "succeeded"'),'offline data run'); assert.equal(execution,4);
   check('ordinary browser preview cannot run Agent nodes, but executes the real data-only workflow');
+  assert.ok(browserRequests.every(url=>!url.includes('/__desktop/')),'no Desktop routes'); assert.ok(!fs.readFileSync(path.join(output,'data','workspace.json'),'utf8').includes('synthetic-platform-token'));
   assert.deepEqual(errors,[]); fs.writeFileSync(path.join(output,'smoke.json'),JSON.stringify({checks,platform:process.platform,execution,cancelled},null,2)); console.log('Smoke evidence: '+output);
 }).then(async()=>{await cleanup();app.exit(0)}).catch(async error=>{console.error(error);console.error('Evidence: '+output);if(win&&!win.isDestroyed()){fs.writeFileSync(path.join(output,'failure.png'),(await win.webContents.capturePage()).toPNG());fs.writeFileSync(path.join(output,'failure-dom.json'),JSON.stringify(await js('({text:document.body.innerText,buttons:[...document.querySelectorAll("button[id]")].map(e=>({id:e.id,disabled:e.disabled}))})'),null,2));}await cleanup();app.exit(1)});
 async function cleanup(){clearTimeout(watchdog);win?.destroy();await preview?.shutdown();await gateway?.close();await backend?.shutdown();if(bridge){bridge.closeAllConnections();await new Promise(resolve=>bridge.close(resolve));}}

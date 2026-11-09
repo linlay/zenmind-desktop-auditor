@@ -28,22 +28,41 @@ test('HTTP workflow save/start/poll/delete is durable and enforces revisions and
   assert.equal((await request('/api/runs/' + started.result.id, undefined, 'DELETE')).result.deleted, true);
   assert.equal((await request('/api/runs/' + started.result.id)).status, 404);
 });
-test('official backend SDK carries exact Agent inputs and token only on its own upstream request', async t => {
-  const bundle = JSON.parse(await readFile(path.join(root, 'build/bundle.json'))); const sdkPath = path.join(root, 'build', bundle.packagePath, 'backend/bridge.mjs');
-  const { createBackendClient } = await import(pathToFileURL(sdkPath)); const calls = [];
-  const upstream = http.createServer(async (req, res) => { const chunks = []; for await (const chunk of req) chunks.push(chunk); const call = JSON.parse(Buffer.concat(chunks)); calls.push(call); assert.equal(req.headers.authorization, 'Bearer synthetic-dag-token'); assert.equal(call.action, 'assistant.execute'); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, result: { chatId: 'fixture-chat-' + calls.length, status: 'success', output: { summary: 'fixture-only', items: ['real-wire-output'] } } })); });
+test('browser APIs connect directly to Platform, choose Agent per node, read owned chat and keep token in memory', async t => {
+  const calls = [], secret = 'synthetic-platform-token';
+  const upstream = http.createServer(async (req, res) => {
+    if (req.headers.authorization !== 'Bearer ' + secret) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ code: 401, msg: 'unauthorized' })); return; }
+    let data;
+    if (req.url.startsWith('/api/agents')) data = [{ key: 'agent-a', name: 'A', engine: 'native' }, { key: 'agent-b', name: 'B', engine: 'native' }, { key: 'external', engine: 'acp' }];
+    else if (req.url.startsWith('/api/chat?')) data = { chatId: 'platform-chat-1', events: [{ type: 'content.message', text: '真实对话' }], resourceTicket: 'must-not-return' };
+    else { assert.equal(req.url, '/api/execute'); const chunks = []; for await (const chunk of req) chunks.push(chunk); const input = JSON.parse(Buffer.concat(chunks)); calls.push(input); data = { chatId: 'platform-chat-' + calls.length, status: 'success', output: { summary: 'platform-result', items: [] } }; }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ code: 0, msg: 'success', data }));
+  });
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening'); t.after(async () => { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); });
-  const sdk = createBackendClient({ url: 'http://127.0.0.1:' + upstream.address().port + '/webapps', token: 'synthetic-dag-token' });
-  const { server, request } = await fixture(t, { configured: true, getClient: async () => sdk });
-  await request('/api/graph', { graph: template(), revision: 0 }, 'PUT'); const start = await request('/api/runs', { revision: 1 }); await server.engine.completion;
-  const run = (await request('/api/runs/' + start.result.id)).result; assert.equal(run.status, 'succeeded'); assert.equal(calls.length, 3);
-  assert.equal(calls[2].args.input.upstream.merge.extract.summary, 'fixture-only'); assert.ok(!JSON.stringify(run).includes('synthetic-dag-token'));
+  const { server, request, origin } = await fixture(t);
+  const address = 'http://127.0.0.1:' + upstream.address().port;
+  assert.equal((await request('/api/platform/connect', { baseUrl: address, token: 'wrong' })).status, 401);
+  const connected = await request('/api/platform/connect', { baseUrl: address, token: secret }); assert.equal(connected.result.agents.length, 2);
+  assert.ok(!JSON.stringify(await request('/api/workspace')).includes(secret)); assert.ok(!JSON.stringify(server.store.value).includes(secret));
+  const graph = template(); graph.nodes.find(node => node.id === 'risks').config.agentKey = 'agent-b';
+  await request('/api/graph', { graph, revision: 0 }, 'PUT'); const start = await request('/api/runs', { revision: 1 }); await server.engine.completion;
+  const run = (await request('/api/runs/' + start.result.id)).result; assert.equal(run.status, 'succeeded'); assert.deepEqual(calls.map(call => call.agentKey), ['agent-a','agent-b','agent-a']); assert.equal(calls[2].input.upstream.merge.extract.summary, 'platform-result');
+  const chat = await request('/api/platform/chat?chatId=platform-chat-1'); assert.equal(chat.result.chatId, 'platform-chat-1'); assert.equal(chat.result.resourceTicket, undefined);
+  assert.equal((await request('/api/platform/chat?chatId=unknown')).status, 403);
+  const html = await fetch(origin).then(response => response.text()); assert.ok(html.includes('platform-dialog'));
 });
-test('final ZIP is valid, portable, has the exact SDK fingerprint and no dependencies or execution data', async () => {
+test('final ZIP is valid, portable, has a direct Platform Bridge and no dependencies or execution data', async () => {
   const zip = await JSZip.loadAsync(await readFile(path.join(root, 'build/dag-lab.zip')), { checkCRC32: true }); const names = Object.keys(zip.files).filter(name => !zip.files[name].dir), ids = new Set(names.map(name => name.split('/')[0])); assert.equal(ids.size, 1); const id = [...ids][0];
   const manifest = JSON.parse(await zip.file(id + '/webapp.json').async('string')); assert.equal(manifest.id, id); assert.equal(manifest.target, 'any'); assert.equal(manifest.backend.command.type, 'electron-node');
   for (const file of ['frontend/app.mjs', 'frontend/core/graph.mjs', 'backend/engine.mjs', 'backend/server.mjs', 'backend/store.mjs']) assert.equal(await zip.file(id + '/' + file).async('string'), await readFile(path.join(root, file), 'utf8'));
   assert.ok(names.every(name => !/(?:^|\/)(?:node_modules|\.git|test-output|workspace\.json|\.env)(?:\/|$)/.test(name)));
-  const info = JSON.parse(await zip.file(id + '/frontend/build-info.json').async('string')); assert.equal(info.sdkSha256, createHash('sha256').update(await zip.file(id + '/backend/bridge.mjs').async('nodebuffer')).digest('hex'));
-  assert.ok(!JSON.stringify(info).includes('/Users/')); assert.equal(manifest.userConfig.fields[0].source, 'desktop.agents');
+  const info = JSON.parse(await zip.file(id + '/frontend/build-info.json').async('string')); assert.equal(info.platformBridge, 'Platform HTTP API'); assert.equal(zip.file(id + '/backend/bridge.mjs'), null); assert.ok(zip.file(id + '/backend/platform-bridge.mjs'));
+  assert.ok(!JSON.stringify(info).includes('/Users/')); assert.equal(manifest.userConfig, undefined); assert.ok(!(await zip.file(id + '/frontend/app.mjs').async('string')).includes('/__desktop/'));
+});
+
+test('a connection verification in flight blocks new DAG execution until its identity is committed', async t => {
+  let entered, release; const started = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  const { request } = await fixture(t, { fetchImpl: async () => { entered(); await gate; return new Response(JSON.stringify({ code:0,data:[{key:'agent-a',engine:'native'}] })); } });
+  const connecting = request('/api/platform/connect', { baseUrl:'http://127.0.0.1:11949',token:'fixture' });
+  await started; assert.equal((await request('/api/runs',{revision:0})).status,409); release(); assert.equal((await connecting).status,200);
 });

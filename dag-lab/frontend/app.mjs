@@ -1,7 +1,7 @@
 import { TYPES, createNode, template, validateGraph, requireGraph } from './core/graph.mjs';
 const $ = id => document.getElementById(id);
 const labels = { pending: '等待依赖', running: '运行中', cancelling: '取消中', succeeded: '已完成', failed: '失败', skipped: '未执行', cancelled: '已取消', interrupted: '已中断' };
-const state = { graph: template(), revision: 0, dirty: false, selected: 'extract', run: null, runNode: null, runs: [], activeId: null, historyMode: false, zoom: .85, connecting: null, sdk: null, configured: false, polling: false, dragging: false, selectedRunId: null, inspectorDirty: false, pending: false };
+const state = { graph: template(), revision: 0, dirty: false, selected: 'extract', run: null, runNode: null, runs: [], activeId: null, historyMode: false, zoom: .85, connecting: null, platform: { agents: [], connected: false }, configured: false, polling: false, dragging: false, selectedRunId: null, inspectorDirty: false, pending: false };
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 const pretty = value => JSON.stringify(value, null, 2);
 const graph = () => state.historyMode && state.run ? state.run.graph : state.graph;
@@ -16,8 +16,9 @@ function displayState(id) { return state.run && (state.historyMode || sameGraph(
 function updateControls() {
   const busy = !!state.activeId, readOnly = state.historyMode;
   $('run').disabled = state.pending || busy || readOnly || (state.graph.nodes.some(node => node.type === 'agent') && !state.configured);
-  $('run').title = !state.configured && state.graph.nodes.some(node => node.type === 'agent') ? '请在 Desktop 内启动应用并选择工作流 Agent' : '';
+  $('run').title = !state.configured && state.graph.nodes.some(node => node.type === 'agent') ? '请先连接 Platform 并选择 Agent' : '';
   $('cancel').hidden = !busy || state.historyMode && state.selectedRunId !== state.activeId; $('cancel').disabled = state.pending;
+  $('default-agent').disabled = busy || !state.platform.connected; $('connect-platform').disabled = busy;
   $('save').disabled = state.pending || readOnly; $('workflow-name').readOnly = readOnly;
   for (const id of ['add-node', 'arrange', 'apply-node', 'remove-node']) $(id).disabled = readOnly;
   $('save-state').textContent = readOnly ? '正在查看运行快照' : state.dirty || state.inspectorDirty ? '未保存' : '已保存';
@@ -83,7 +84,7 @@ function renderInspector() {
   $('node-label').value = node.label; $('node-id').textContent = node.id;
   $('input-config').hidden = node.type !== 'input'; $('agent-config').hidden = node.type !== 'agent'; $('data-config').hidden = !['merge', 'output'].includes(node.type);
   $('data-config').textContent = node.type === 'merge' ? '将上游结果合并为一个对象，以节点 ID 为键。' : '一个上游时直接输出，多路上游时按节点 ID 汇总输出。';
-  $('input-value').value = pretty(node.config.value ?? {}); $('agent-message').value = node.config.message || ''; $('agent-schema').value = pretty(node.config.outputSchema || {});
+  $('input-value').value = pretty(node.config.value ?? {}); populateNodeAgents(node.config.agentKey || ''); $('agent-message').value = node.config.message || ''; $('agent-schema').value = pretty(node.config.outputSchema || {});
   $('dependencies').replaceChildren();
   const parents = data.edges.filter(edge => edge.target === node.id).map(edge => edge.source);
   if (node.type === 'input') $('dependencies').append(el('div', 'field-hint', '输入节点是流程起点，无上游依赖。'));
@@ -99,7 +100,7 @@ function applyInspector() {
   try {
     const next = structuredClone(state.graph), node = next.nodes.find(node => node.id === current.id); node.label = $('node-label').value.trim();
     if (node.type === 'input') node.config = { value: JSON.parse($('input-value').value) };
-    if (node.type === 'agent') node.config = { message: $('agent-message').value, outputSchema: JSON.parse($('agent-schema').value) };
+    if (node.type === 'agent') node.config = { message: $('agent-message').value, outputSchema: JSON.parse($('agent-schema').value), ...($('node-agent').value ? { agentKey: $('node-agent').value } : {}) };
     const parents = [...$('dependencies').querySelectorAll('input:checked')].map(input => input.value);
     next.edges = next.edges.filter(edge => edge.target !== node.id || parents.includes(edge.source));
     for (const source of parents) if (!next.edges.some(edge => edge.source === source && edge.target === node.id)) next.edges.push({ source, target: node.id });
@@ -123,15 +124,15 @@ function renderRun() {
   $('run-nodes').replaceChildren(); const result = state.runNode && run.nodes[state.runNode];
   const final = el('button', 'run-node' + (!result ? ' selected' : ''), '最终结果'); final.addEventListener('click', () => { state.runNode = null; renderRun(); }); $('run-nodes').append(final);
   for (const node of run.graph.nodes) { const record = run.nodes[node.id], button = el('button', 'run-node' + (state.runNode === node.id ? ' selected' : ''), (record.status === 'succeeded' ? '✓ ' : record.status === 'running' ? '◉ ' : '') + node.label); button.addEventListener('click', () => { state.runNode = node.id; renderRun(); }); $('run-nodes').append(button); }
-  const data = result ? { nodeId: state.runNode, status: result.status, ...(result.startedAt ? { durationMs: (result.finishedAt || Date.now()) - result.startedAt } : {}), upstream: run.graph.edges.filter(edge => edge.target === state.runNode).map(edge => edge.source), ...('output' in result ? { output: result.output } : {}), ...(result.error ? { error: result.error } : {}), ...(result.chatId ? { chatId: result.chatId } : {}) } : { status: run.status, mode: run.mode, ...(run.error ? { error: run.error } : {}), outputs: run.outputs };
+  const data = result ? { nodeId: state.runNode, status: result.status, ...(result.startedAt ? { durationMs: (result.finishedAt || Date.now()) - result.startedAt } : {}), upstream: run.graph.edges.filter(edge => edge.target === state.runNode).map(edge => edge.source), ...('output' in result ? { output: result.output } : {}), ...(result.error ? { error: result.error } : {}), ...(result.chatId ? { chatId: result.chatId } : {}), ...(result.agentKey ? { agentKey: result.agentKey } : {}) } : { status: run.status, mode: run.mode, ...(run.error ? { error: run.error } : {}), outputs: run.outputs };
   $('run-output').textContent = pretty(data).slice(0, 48000) + (pretty(data).length > 48000 ? '\n…显示已截断；导出结果可读取完整内容。' : '');
-  if (result?.chatId) { const button = el('button', 'quiet', '打开节点对话历史 ↗'); button.disabled = !state.sdk?.desktop?.chat?.open; button.addEventListener('click', async () => { try { await state.sdk.desktop.chat.open({ chatId: result.chatId }); } catch (error) { notice(error.message, true); } }); $('run-output').prepend(button); }
+  if (result?.chatId) { const button = el('button', 'quiet', '查看节点对话 ↗'); button.disabled = !state.platform.connected; button.addEventListener('click', async () => { $('chat-title').textContent = 'Platform 对话 · ' + result.chatId; $('chat-content').textContent = '正在读取…'; $('chat-dialog').showModal(); try { const chat = await api('/api/platform/chat?chatId=' + encodeURIComponent(result.chatId)); $('chat-content').textContent = pretty(chat); } catch (error) { $('chat-content').textContent = error.message; } }); $('run-output').prepend(button); }
   updateControls();
 }
 async function refreshWorkspace({ initial = false } = {}) {
-  const value = await api('/api/workspace'); state.configured = value.agentConfigured; state.runs = value.runs; state.activeId = value.activeRunId;
+  const value = await api('/api/workspace'); state.configured = value.agentConfigured; state.platform = value.platform; renderPlatform(); state.runs = value.runs; state.activeId = value.activeRunId;
   if (initial) { state.graph = value.graph; state.revision = value.revision; state.selected = value.graph.nodes.find(node => node.type === 'agent')?.id || value.graph.nodes[0]?.id; $('workflow-name').value = state.graph.name; state.selectedRunId = value.activeRunId || value.runs[0]?.id; }
-  $('connection').textContent = value.agentConfigured ? 'Desktop 后端已连接' : '本地预览 · 智能体未连接'; $('connection-dot').classList.toggle('offline', !value.agentConfigured);
+  $('connection').textContent = value.agentConfigured ? 'Platform 已连接' : '应用已启动 · Platform 未连接'; $('connection-dot').classList.toggle('offline', !value.agentConfigured);
   renderHistory(); updateControls();
 }
 async function loadRun() {
@@ -139,12 +140,22 @@ async function loadRun() {
   const id = state.selectedRunId, run = await api('/api/runs/' + id); if (state.selectedRunId !== id) return;
   state.run = run; renderRun(); if (!state.dragging) renderCanvas();
 }
+function populateNodeAgents(selected) {
+  const options = [Object.assign(el('option', '', '使用默认 Agent'), { value: '' }), ...state.platform.agents.map(agent => Object.assign(el('option', '', agent.name + ' · ' + agent.key), { value: agent.key }))];
+  if (selected && !state.platform.agents.some(agent => agent.key === selected)) options.push(Object.assign(el('option', '', selected + '（当前目录不可用）'), { value: selected }));
+  $('node-agent').replaceChildren(...options); $('node-agent').value = selected; $('node-agent').disabled = state.historyMode;
+}
+function renderPlatform() {
+  const selected = $('node-agent').value;
+  $('default-agent').replaceChildren(...(state.platform.agents.length ? state.platform.agents.map(agent => Object.assign(el('option', '', agent.name + ' · ' + agent.key), { value: agent.key })) : [Object.assign(el('option', '', '请先连接 Platform'), { value: '' })]));
+  $('default-agent').value = state.platform.defaultAgentKey || '';
+  $('connect-platform').textContent = state.platform.connected ? '连接设置' : '连接 Platform';
+  $('agent-note').textContent = state.platform.connected ? 'Platform Bridge · 智能体节点需要 result_submit，可逐节点选择 Agent' : '请填写 Platform 地址和凭据；普通浏览器支持完整智能体流程。';
+  if (!state.inspectorDirty) populateNodeAgents(selected);
+}
 async function refreshAgent() {
-  try {
-    const sdk = await import('/__desktop/bridge.js'); state.sdk = sdk;
-    const values = await sdk.desktop.app.getUserConfig(); const appearance = await sdk.desktop.theme.get(); document.documentElement.dataset.theme = appearance.resolvedTheme;
-    $('agent-name').textContent = values.agent || 'Desktop 默认助手'; $('agent-note').textContent = '所有智能体节点共用此 Agent · 需要 result_submit 工具';
-  } catch { $('agent-name').textContent = '尚未连接 Desktop Agent'; $('agent-note').textContent = '在 Desktop 应用设置选择 Agent；浏览器可运行无模型的数据流程。'; }
+  try { await api('/api/platform/agents'); await refreshWorkspace(); notice('已刷新 Platform Agent 目录。'); }
+  catch (error) { notice(error.message, true); }
   updateControls();
 }
 async function save() {
@@ -169,9 +180,13 @@ function replaceGraph(next) {
   state.graph = next; state.historyMode = false; state.selected = next.nodes[0]?.id; state.connecting = null; $('workflow-name').value = next.name; state.inspectorDirty = false; changed(); renderCanvas(); renderInspector(); notice('流程已载入，保存后即可运行。');
 }
 function wire() {
+  $('connect-platform').addEventListener('click', () => { $('platform-url').value = state.platform.baseUrl || 'http://127.0.0.1:11949'; $('platform-token').value = ''; $('platform-error').textContent = ''; $('platform-dialog').showModal(); });
+  $('close-platform').addEventListener('click', () => $('platform-dialog').close()); $('close-chat').addEventListener('click', () => $('chat-dialog').close());
+  $('platform-form').addEventListener('submit', async event => { event.preventDefault(); $('platform-submit').disabled = true; $('platform-error').textContent = ''; try { await api('/api/platform/connect', { baseUrl: $('platform-url').value, token: $('platform-token').value }); $('platform-token').value = ''; $('platform-dialog').close(); await refreshWorkspace(); renderInspector(); notice('Platform 已连接，请选择默认 Agent 后运行流程。'); } catch (error) { $('platform-error').textContent = error.message; } finally { $('platform-token').value = ''; $('platform-submit').disabled = false; } });
+  $('default-agent').addEventListener('change', async () => { try { await api('/api/platform/agent', { agentKey: $('default-agent').value }, 'PUT'); await refreshWorkspace(); } catch (error) { notice(error.message, true); } });
   $('workflow-name').addEventListener('input', () => { state.graph.name = $('workflow-name').value; changed(); });
   $('node-form').addEventListener('submit', event => { event.preventDefault(); if (applyInspector()) notice('节点配置已应用，保存流程后生效。'); });
-  for (const field of ['node-label', 'input-value', 'agent-message', 'agent-schema']) $(field).addEventListener('input', () => { state.inspectorDirty = true; updateControls(); });
+  for (const field of ['node-label', 'input-value', 'agent-message', 'agent-schema', 'node-agent']) $(field).addEventListener('input', () => { state.inspectorDirty = true; updateControls(); });
   $('save').addEventListener('click', async () => { if (state.pending) return; state.pending = true; updateControls(); try { if (await save()) notice('流程已保存。'); } catch (error) { notice(error.message, true); } finally { state.pending = false; updateControls(); } });
   $('run').addEventListener('click', run);
   $('cancel').addEventListener('click', async () => { try { await api('/api/runs/' + state.activeId + '/cancel', {}); notice('已请求取消；已经执行的操作不会回滚。'); await refreshWorkspace(); await loadRun(); } catch (error) { notice(error.message, true); } });
@@ -200,5 +215,5 @@ async function poll() {
   finally { state.polling = false; setTimeout(poll, state.activeId ? 900 : 4000); }
 }
 wire();
-try { await refreshWorkspace({ initial: true }); if (state.selectedRunId) await loadRun(); renderCanvas(); renderInspector(); await refreshAgent(); document.body.dataset.ready = 'true'; setTimeout(poll, 1200); }
+try { await refreshWorkspace({ initial: true }); if (state.selectedRunId) await loadRun(); renderCanvas(); renderInspector(); document.body.dataset.ready = 'true'; setTimeout(poll, 1200); }
 catch (error) { notice('无法连接本地服务：' + error.message, true); renderCanvas(); renderInspector(); document.body.dataset.ready = 'error'; }

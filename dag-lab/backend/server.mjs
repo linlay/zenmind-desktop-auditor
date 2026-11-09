@@ -3,6 +3,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
+import { PlatformBridge } from './platform-bridge.mjs';
 import { Engine, active } from './engine.mjs';
 import { requireGraph, problem } from '../frontend/core/graph.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -10,7 +11,7 @@ const mime = { '.html': 'text/html; charset=utf-8', '.mjs': 'text/javascript; ch
 function localAuthority(value) { try { const url = new URL('http://' + value); return typeof value === 'string' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && url.host === value && !url.username && !url.password; } catch { return false; } }
 export function guard(req) {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
-  if (!localAuthority(host) || req.headers['x-forwarded-proto'] && req.headers['x-forwarded-proto'] !== 'http') throw problem('local_only', '工作流只允许本机 Desktop 页面访问。', 403);
+  if (!localAuthority(host) || req.headers['x-forwarded-proto'] && req.headers['x-forwarded-proto'] !== 'http') throw problem('local_only', '工作流只允许本机同源页面访问。', 403);
   if (req.headers['x-dag-lab'] !== '1') throw problem('request_forbidden', '缺少应用请求标识。', 403);
   if (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') throw problem('origin_forbidden', '不接受跨源调用。', 403);
   if (req.headers.origin && req.headers.origin !== 'http://' + host || req.method !== 'GET' && !req.headers.origin) throw problem('origin_forbidden', '写请求需要精确同源 Origin。', 403);
@@ -22,20 +23,19 @@ async function body(req) {
   try { const value = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(); return value; } catch { throw problem('invalid_json', '请求不是合法 JSON 对象。'); }
 }
 function fields(value, allowed) { if (Object.keys(value).some(key => !allowed.includes(key))) throw problem('invalid_args', '请求包含未支持的字段。'); }
-export async function createServer({ env = process.env, directory, preview = false, frontendRoot = path.join(root, 'frontend'), getClient, configured } = {}) {
+export async function createServer({ env = process.env, directory, preview = false, frontendRoot = path.join(root, 'frontend'), platformBridge, fetchImpl } = {}) {
   const storage = directory || env.WEBAPP_DATA_DIR;
   if (!storage) throw problem('data_directory_required', '需要 Desktop 注入 WEBAPP_DATA_DIR；本地预览请运行 npm run dev。');
   const store = await new Store(storage).init();
-  let client;
-  const load = getClient || (async () => {
-    if (!env.DESKTOP_ACTION_BRIDGE_URL || !env.DESKTOP_ACTION_BRIDGE_TOKEN) throw problem('agent_unavailable', '受管后端 SDK 未配置。');
-    if (!client) { const { createBackendClient } = await import('./bridge.mjs'); client = createBackendClient({ url: env.DESKTOP_ACTION_BRIDGE_URL, token: env.DESKTOP_ACTION_BRIDGE_TOKEN }); } return client;
-  });
-  const engine = new Engine({ store, secrets: [env.DESKTOP_ACTION_BRIDGE_TOKEN], getClient: load, configured: configured ?? Boolean(env.DESKTOP_ACTION_BRIDGE_URL && env.DESKTOP_ACTION_BRIDGE_TOKEN) });
+  let bridge = platformBridge || new PlatformBridge({ baseUrl: env.DAG_LAB_PLATFORM_URL || store.value.platform?.baseUrl || 'http://127.0.0.1:11949', token: env.DAG_LAB_PLATFORM_TOKEN || '', fetchImpl });
+  let configurationPending = false;
+  let defaultAgentKey = store.value.platform?.defaultAgentKey || '';
+  if (env.DAG_LAB_PLATFORM_URL) { try { await bridge.listAgents(); defaultAgentKey ||= bridge.agents[0]?.key || ''; } catch { /* UI reports disconnected; never synthesize a successful connection. */ } }
+  const engine = new Engine({ store, getClient: async () => bridge, configured: bridge.connected, secrets: [bridge.token], defaultAgent: () => defaultAgentKey, agents: () => bridge.agents });
   const send = (res, status, result, error) => {
     if (res.destroyed || res.writableEnded) return;
     let text = JSON.stringify(error ? { ok: false, error } : { ok: true, result });
-    if (env.DESKTOP_ACTION_BRIDGE_TOKEN) text = text.split(env.DESKTOP_ACTION_BRIDGE_TOKEN).join('[已隐藏]');
+    if (bridge.token) text = text.split(bridge.token).join('[已隐藏]');
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(text);
   };
   const server = http.createServer(async (req, res) => {
@@ -44,8 +44,33 @@ export async function createServer({ env = process.env, directory, preview = fal
       if (endpoint === '/api/health' && req.method === 'GET') return send(res, 200, { healthy: true });
       if (endpoint.startsWith('/api/')) {
         guard(req);
-        if (endpoint === '/api/workspace' && req.method === 'GET') return send(res, 200, { graph: store.value.graph, revision: store.value.revision || 0, agentConfigured: engine.configured, activeRunId: engine.current?.run.id || null,
+        if (endpoint === '/api/workspace' && req.method === 'GET') return send(res, 200, { graph: store.value.graph, revision: store.value.revision || 0, platform: { baseUrl: bridge.baseUrl, connected: bridge.connected, tokenConfigured: Boolean(bridge.token), defaultAgentKey, agents: bridge.agents }, agentConfigured: bridge.connected, activeRunId: engine.current?.run.id || null,
           runs: store.value.runs.map(({ id, name, status, startedAt, finishedAt, mode }) => ({ id, name, status, startedAt, finishedAt, mode })) });
+        if (endpoint === '/api/platform/connect' && req.method === 'POST') {
+          if (engine.current || configurationPending) throw problem('run_in_progress', '运行或连接配置处理中，请稍后重试。', 409);
+          const value = await body(req); fields(value, ['baseUrl', 'token', 'defaultAgentKey']);
+          if (typeof value.baseUrl !== 'string' || typeof value.token !== 'string' || value.token.length > 32768 || /[\r\n]/.test(value.token)) throw problem('invalid_args', 'Platform 地址或凭据格式不正确。');
+          configurationPending = true;
+          try {
+          const candidate = new PlatformBridge({ baseUrl: value.baseUrl, token: value.token, fetchImpl }); await candidate.listAgents();
+          const selected = value.defaultAgentKey || candidate.agents[0]?.key || '';
+          if (selected && !candidate.agents.some(agent => agent.key === selected)) throw problem('agent_required', '所选 Agent 不在 Platform 目录中。');
+          const previous = store.value.platform; store.value.platform = { baseUrl: candidate.baseUrl, defaultAgentKey: selected }; try { await store.save(); } catch (error) { store.value.platform = previous; throw error; }
+          bridge = candidate; defaultAgentKey = selected; engine.configured = true; engine.secrets = [bridge.token];
+          return send(res, 200, { connected: true, agents: bridge.agents, defaultAgentKey });
+          } finally { configurationPending = false; }
+        }
+        if (endpoint === '/api/platform/agents' && req.method === 'GET') { const agents = await bridge.listAgents(); engine.configured = true; return send(res, 200, { agents }); }
+        if (endpoint === '/api/platform/agent' && req.method === 'PUT') {
+          if (engine.current || configurationPending) throw problem('run_in_progress', '运行或连接配置处理中，请稍后重试。', 409);
+          const value = await body(req); fields(value, ['agentKey']); if (!bridge.agents.some(agent => agent.key === value.agentKey)) throw problem('agent_required', '请选择真实 Agent。');
+          configurationPending = true; const previous = store.value.platform; try { store.value.platform = { baseUrl: bridge.baseUrl, defaultAgentKey: value.agentKey }; try { await store.save(); } catch (error) { store.value.platform = previous; throw error; } defaultAgentKey = value.agentKey; return send(res, 200, { defaultAgentKey }); } finally { configurationPending = false; }
+        }
+        if (endpoint === '/api/platform/chat' && req.method === 'GET') {
+          const chatId = url.searchParams.get('chatId');
+          if (!chatId || !store.value.runs.some(run => Object.values(run.nodes).some(node => node.chatId === chatId))) throw problem('chat_forbidden', '只能查看本应用实际执行产生的对话。', 403);
+          return send(res, 200, await bridge.getChat(chatId));
+        }
         if (endpoint === '/api/graph' && req.method === 'PUT') {
           const value = await body(req); fields(value, ['graph', 'revision']);
           if (value.revision !== (store.value.revision || 0)) throw problem('revision_conflict', '另一页面已更新流程，请刷新后重试；本页可先导出草稿。', 409);
@@ -54,7 +79,7 @@ export async function createServer({ env = process.env, directory, preview = fal
           try { await store.save(); } catch (error) { store.value.graph = previous; store.value.revision = revision; throw error; }
           return send(res, 200, { revision: store.value.revision });
         }
-        if (endpoint === '/api/runs' && req.method === 'POST') { const value = await body(req); fields(value, ['revision']); if (value.revision !== (store.value.revision || 0)) throw problem('revision_conflict', '流程已更新，请先刷新。', 409); const run = await engine.start(store.value.graph); return send(res, 202, { id: run.id }); }
+        if (endpoint === '/api/runs' && req.method === 'POST') { const value = await body(req); fields(value, ['revision']); if (value.revision !== (store.value.revision || 0)) throw problem('revision_conflict', '流程已更新，请先刷新。', 409); if (configurationPending) throw problem('connection_busy', 'Platform 连接正在更新，请稍后运行。', 409); engine.configured = bridge.connected; const run = await engine.start(store.value.graph); return send(res, 202, { id: run.id }); }
         const match = endpoint.match(/^\/api\/runs\/([a-f0-9-]{36})(\/cancel)?$/);
         if (match) {
           const run = store.value.runs.find(run => run.id === match[1]); if (!run) throw problem('run_not_found', '运行记录不存在。', 404);
@@ -64,7 +89,7 @@ export async function createServer({ env = process.env, directory, preview = fal
         }
         throw problem('not_found', '接口不存在。', 404);
       }
-      if (preview && req.method === 'GET') {
+      if (req.method === 'GET') {
         const name = endpoint === '/' ? 'index.html' : endpoint.slice(1);
         if (!['index.html', 'app.mjs', 'styles.css', 'favicon.svg', 'core/graph.mjs', 'build-info.json'].includes(name)) throw problem('not_found', '文件不存在。', 404);
         const bytes = await readFile(path.join(frontendRoot, name)); res.writeHead(200, { 'Content-Type': mime[path.extname(name)], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); return;

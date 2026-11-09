@@ -2,13 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { requireGraph, validateGraph, jsonBytes, problem } from '../frontend/core/graph.mjs';
 const active = run => ['running', 'cancelling'].includes(run?.status);
 export class Engine {
-  constructor({ store, getClient, configured = false, secrets = [] }) { this.secrets = secrets; this.store = store; this.getClient = getClient; this.configured = configured; this.current = null; this.completion = Promise.resolve(); }
+  constructor({ store, getClient, configured = false, secrets = [], defaultAgent = () => '', agents = () => [] }) { this.defaultAgent = defaultAgent; this.agents = agents; this.secrets = secrets; this.store = store; this.getClient = getClient; this.configured = configured; this.current = null; this.completion = Promise.resolve(); }
   async start(graph) {
     if (this.current) throw problem('run_in_progress', '已有流程正在运行，请等待结束或取消。', 409);
     const snapshot = requireGraph(graph);
-    if (snapshot.nodes.some(node => node.type === 'agent') && !this.configured) throw problem('agent_unavailable', '智能体节点需在 Desktop 中运行，并选择具备 result_submit 的 Native Agent。', 409);
+    if (snapshot.nodes.some(node => node.type === 'agent') && !this.configured) throw problem('agent_unavailable', '请先在网页连接 Platform，并选择具备 result_submit 的 Native Agent。', 409);
+    const agentKeys = {};
+    for (const node of snapshot.nodes.filter(node => node.type === 'agent')) { const agentKey = node.config.agentKey || this.defaultAgent(); if (!agentKey || !this.agents().some(agent => agent.key === agentKey)) throw problem('agent_required', `${node.label}：请选择 Platform 目录中的 Agent。`); agentKeys[node.id] = agentKey; }
     if (this.store.value.runs.length >= 30) throw problem('history_full', '已保留 30 次运行，请先清理旧记录。', 409);
-    const run = { id: randomUUID(), name: snapshot.name, graph: snapshot, startedAt: Date.now(), finishedAt: null, status: 'running', mode: snapshot.nodes.some(node => node.type === 'agent') ? 'desktop-agent' : 'data-only', nodes: Object.fromEntries(snapshot.nodes.map(node => [node.id, { status: 'pending' }])), outputs: {} };
+    const run = { id: randomUUID(), name: snapshot.name, graph: snapshot, agentKeys, startedAt: Date.now(), finishedAt: null, status: 'running', mode: snapshot.nodes.some(node => node.type === 'agent') ? 'platform-agent' : 'data-only', nodes: Object.fromEntries(snapshot.nodes.map(node => [node.id, { status: 'pending' }])), outputs: {} };
     const controller = new AbortController(); this.current = { run, controller }; this.store.value.runs.unshift(run);
     try { await this.store.save(); } catch (error) { this.current = null; this.store.value.runs.shift(); throw error; }
     this.completion = this.execute(run, controller).finally(() => { this.current = null; });
@@ -28,12 +30,13 @@ export class Engine {
         else if (node.type === 'merge') output = upstream;
         else if (node.type === 'output') output = parents.length === 1 ? upstream[parents[0]] : upstream;
         else {
-          const args = { message: node.config.message, input: { upstream }, outputSchema: node.config.outputSchema };
-          if (jsonBytes({ action: 'assistant.execute', args }) > 240 * 1024) throw problem('input_too_large', '上游内容超过后端请求上限，请减少输入或节点输出。');
+          const args = { agentKey: run.agentKeys[id], message: node.config.message, input: { upstream }, outputSchema: node.config.outputSchema };
+          if (jsonBytes(args) > 240 * 1024) throw problem('input_too_large', '上游内容超过后端请求上限，请减少输入或节点输出。');
+          currentNode.agentKey = run.agentKeys[id];
           const sdk = await this.getClient(); controller.signal.throwIfAborted();
-          const response = await sdk.assistant.execute(args, { signal: controller.signal });
+          const response = await sdk.execute(args, { signal: controller.signal });
           controller.signal.throwIfAborted();
-          if (typeof response?.chatId !== 'string' || !response.chatId) throw problem('invalid_response', '宿主没有返回真实 Chat ID。');
+          if (typeof response?.chatId !== 'string' || !response.chatId) throw problem('invalid_response', 'Platform 没有返回真实 Chat ID。');
           currentNode.chatId = response.chatId;
           if (response.status === 'failure') throw problem('agent_business_failure', typeof response.reason === 'string' ? response.reason : '智能体未能完成任务。');
           if (response.status !== 'success' || !response.output || typeof response.output !== 'object' || Array.isArray(response.output)) throw problem('invalid_response', '智能体未返回有效结构化交卷。');
