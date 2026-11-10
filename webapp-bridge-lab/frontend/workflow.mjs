@@ -80,15 +80,17 @@ export class Workflow {
   report() { return [...this.chats.values()].map(({ revision, ...chat }) => chat); }
 }
 
-export const BACKEND_METHODS = new Set(['assistant.chat', 'assistant.execute', 'assistant.subscribe', 'assistant.stop',
+export const BACKEND_METHODS = new Set(['assistant.upload', 'assistant.resource.read', 'assistant.steer', 'assistant.send', 'assistant.interrupt', 'assistant.submit', 'assistant.chat', 'assistant.execute', 'assistant.subscribe', 'assistant.stop',
   'connector.list', 'connector.describe', 'connector.invoke', 'skill.list', 'skill.describe', 'artifact.list', 'artifact.get', 'artifact.read',
   'kanban.boards.list', 'kanban.issues.list', 'kanban.issues.get']);
-export const WRITES = new Set(['assistant.chat', 'assistant.execute', 'assistant.subscribe', 'assistant.stop', 'connector.invoke']);
+export const WRITES = new Set(['assistant.upload', 'assistant.resource.read', 'assistant.steer', 'assistant.send', 'assistant.interrupt', 'assistant.submit', 'assistant.chat', 'assistant.execute', 'assistant.subscribe', 'assistant.stop', 'connector.invoke']);
 
 export function validateResult(path, value, args) {
   const invalid = message => { throw problem('invalid_response', path + '：' + message); };
   if (!['auth.isAvailable', 'desktop.capabilities.has'].includes(path) && (!value || typeof value !== 'object' || Array.isArray(value))) invalid('必须返回实际结果对象，不能用 null 或缺失值代替');
-  if (path === 'assistant.chat') {
+  if (path === 'assistant.upload') {
+    if (!nonempty(value.chatId) || !nonempty(value.upload?.id) || !nonempty(value.upload?.name)) invalid('缺少上传 Chat 或文件标识');
+  } else if (path === 'assistant.chat') {
     if (!nonempty(value?.chatId) || !nonempty(value?.runId)) invalid('缺少真实 chatId / runId');
     if (args.background ? value.accepted !== true : !nonempty(value.text)) invalid('缺少聊天接受标识或实际回复');
   } else if (path === 'assistant.execute') {

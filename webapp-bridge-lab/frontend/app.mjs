@@ -172,7 +172,7 @@ function blockReason(path, args, channel = 'page') {
       if (path !== 'artifact.list') state.workflow.checkArtifactArgs(args);
       if (path === 'artifact.read' && state.workflow.chat(args.chatId).items.find(item => item.artifactId === args.artifactId && (!args.runId || item.runId === args.runId))?.sizeBytes > 1048576) return '文件超过本测试页的 1 MiB 读取上限，请使用前端预览或另存为。';
     }
-    if (['assistant.subscribe', 'assistant.stop'].includes(path)) {
+    if (['assistant.subscribe', 'assistant.stop', 'assistant.interrupt', 'assistant.steer', 'assistant.send', 'assistant.submit'].includes(path)) {
       const run = [...state.workflow.chats.values()].find(chat => chat.kind === 'background' && chat.runId === args?.runId && chat.status !== 'expired');
       if (!run) return '请先点击「后台聊天」或「生成测试产物」，同步聊天的 runId 不能用于后台运行控制。';
       if (path === 'assistant.stop' && run.status !== 'running') return '此后台 Run 已结束，无需再次停止；可创建新的后台聊天测试停止。';
@@ -310,6 +310,8 @@ function autoArgs(def, channel = 'page') {
     if ('chatId' in args) args.chatId = state.workflow.selectedChatId;
     if ('runId' in args) args.runId = context.runId || '';
     if ('artifactId' in args) { try { Object.assign(args, state.workflow.artifactArgs()); } catch { args.artifactId = ''; delete args.runId; } }
+    if (def.path === 'assistant.resource.read' && cache['assistant.upload']) { args.chatId = cache['assistant.upload'].chatId; args.file = cache['assistant.upload'].upload.name; }
+    if (def.path === 'assistant.chat' && cache['assistant.upload']) { args.chatId = cache['assistant.upload'].chatId; args.uploadIds = [cache['assistant.upload'].upload.id]; }
     if (def.path === 'assistant.image' && !args.requestId) args.requestId = 'bridge-lab-' + crypto.randomUUID();
   }
   if (def.path === 'assistant.image.cancel') return { args: state.imageRequestId, missing: state.imageRequestId ? null : '正在运行的图像请求' };
@@ -329,6 +331,11 @@ function applyResult(path, value, channel = 'page', args = {}, ticket) {
   if (path === 'artifact.list') state.workflow.acceptList(ticket, value);
   if (path === 'artifact.read') { state.workflow.assertCurrent(ticket); state.reads.set(readKey(args), { ...value, revision: ticket.revision }); }
   cache[path] = value;
+  if (path === 'assistant.upload') {
+    state.workflow.remember(value, { channel, kind: 'upload' });
+    state.contexts[channel].chatId = value.chatId;
+    updateIdentity();
+  }
   if (path === 'assistant.chat' || path === 'assistant.execute') {
     state.workflow.remember(value, { channel, kind: path === 'assistant.execute' ? 'execute' : value.accepted ? 'background' : 'chat' });
     if (path === 'assistant.chat') {
@@ -389,8 +396,9 @@ function validateExecute(input) {
 async function invokePage(path, args, { signal } = {}) {
   const method = findMethod(state.sdk, path);
   if (!method) throw localError('sdk_unavailable', 'SDK 未提供 ' + path);
+  if (path === 'assistant.upload') { const { text, ...input } = args; if (typeof text !== 'string') throw localError('invalid_args', '请输入上传文本 text'); return method({ ...input, file: new Blob([text], { type: 'text/plain' }) }, { signal }); }
   if (path === 'assistant.execute') return method(validateExecute(args), { signal });
-  return normalize(await method(args), signal);
+  return normalize(await method(args, { signal }), signal);
 }
 async function api(endpoint, input, signal) {
   const response = await fetch(endpoint, { method: input === undefined ? 'GET' : 'POST', signal, credentials: 'omit', redirect: 'error',

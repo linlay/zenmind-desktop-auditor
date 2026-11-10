@@ -2047,3 +2047,10 @@ await desktop.copilot.close();
 ```
 
 页面禁用 Copilot 时 open 返回 `copilot_disabled`；应用不在主工作区前台时返回 `webapp_ui_unavailable`。后端、局域网、发布页面不可用。仅手动调用，回执记为待观察，需确认界面实际变化。
+
+
+新增 Platform 桥：`assistant.upload({file: Blob, name?, chatId?}, {signal?})`（单文件 64 MiB，省略 chatId 时由 Platform 创建并返回 canonical chatId；指定已有 chatId 则向该 Chat 追加文件，返回安全 upload 元数据）；聊天可带 `chatId + uploadIds` 引用同实例上传，句柄有效 30 分钟。`assistant.resource.read({chatId,file},{signal?})` 返回有界字节流（16 MiB），file 是 Chat 相对路径，不接受 URL 或主机路径。已发布产物继续使用 artifact 接口。
+
+`assistant.steer({runId,message,requestId?,steerId?})`、`assistant.send({runId,message,requestId?})`、`assistant.submit({runId,awaitingId,submitId?,param?|params?})` 仅操作本实例的后台 Run。send 返回 mailbox 回执，不代表任务完成；新回执 Run 不自动取得订阅资格。`assistant.interrupt({runId})` 等同 stop。所有控制使用固定根 Agent 和 Primary 通道。
+
+新增卡片均为手动调用。Lab 上传卡片用 text 生成真实文本 Blob，方便前后端使用相同样本；业务 SDK 直接接受 Blob。resource 测试页保持 1 MiB 展示限额，宿主支持 16 MiB。

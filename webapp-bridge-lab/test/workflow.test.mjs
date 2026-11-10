@@ -70,3 +70,13 @@ test('backend workbench never exposes page-only or unimplemented entry points', 
   for (const path of ['artifact.open', 'artifact.saveAs', 'assistant.image', 'desktop.authenticateConnector', 'desktop.dialog.selectFiles', 'auth.createSession', 'automation.list']) assert.equal(BACKEND_METHODS.has(path), false, path);
   for (const path of ['assistant.chat', 'assistant.execute', 'artifact.list', 'artifact.get', 'artifact.read', 'connector.invoke']) assert.equal(BACKEND_METHODS.has(path), true, path);
 });
+
+
+test('uploaded Chat is real provenance without manufacturing a Run or published artifacts', () => {
+  const flow = new Workflow();
+  flow.remember({chatId:'uploaded-chat',upload:{id:'u',name:'test.txt'}},{channel:'page',kind:'upload'});
+  assert.equal(flow.chat().runId,'');assert.equal(flow.chat().kind,'upload');
+  assert.throws(()=>flow.artifact());
+  validateResult('assistant.upload',{chatId:'uploaded-chat',upload:{id:'u',name:'test.txt'}},{});
+  assert.throws(()=>validateResult('assistant.upload',{chatId:'uploaded-chat'},{}));
+});

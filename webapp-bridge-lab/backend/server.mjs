@@ -8,7 +8,7 @@ import { acceptEcho } from './websocket.mjs';
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const READ = new Set(['connector.list', 'connector.describe', 'skill.list', 'skill.describe',
   'kanban.boards.list', 'kanban.issues.list', 'kanban.issues.get', 'artifact.list', 'artifact.get', 'artifact.read']);
-const WRITE = new Set(['assistant.chat', 'assistant.execute', 'assistant.stop', 'connector.invoke']);
+const WRITE = new Set(['assistant.upload', 'assistant.resource.read', 'assistant.steer', 'assistant.send', 'assistant.interrupt', 'assistant.submit', 'assistant.chat', 'assistant.execute', 'assistant.stop', 'connector.invoke']);
 const RESERVED = new Set(['assistant.image', 'artifact.open', 'artifact.saveAs', 'automation.list', 'automation.get',
   'automation.create', 'automation.update', 'automation.pause', 'automation.resume', 'automation.remove', 'automation.runs.list', 'automation.runs.get']);
 const mime = { '.html': 'text/html; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8' };
@@ -142,6 +142,7 @@ export function createLabServer({ env = process.env, preview = false, loadClient
         if (WRITE.has(action) && input.allowSideEffects !== true) throw new LabError('manual_only', 'Enable side effects before this manual backend call.', 403);
         const method = resolveMethod(await getClient(), action);
         timer = setTimeout(abort, action === 'assistant.execute' ? 620000 : 120000); timer.unref();
+        if (action === 'assistant.upload') { const { text, ...args } = input.args || {}; if (typeof text !== 'string') throw new LabError('invalid_args', 'Supply text for the upload fixture.'); input.args = { ...args, file: new Blob([text], { type: 'text/plain' }) }; }
         const value = action === 'assistant.execute' ? await method(input.args, { signal: controller.signal }) : await method(input.args ?? {});
         if (controller.signal.aborted) throw new LabError('cancelled', 'Request ended.', 408);
         const result = await normalizeResult(value);
