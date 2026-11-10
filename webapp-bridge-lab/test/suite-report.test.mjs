@@ -5,7 +5,7 @@ import { buildReport } from '../frontend/report.mjs';
 import { catalog } from '../frontend/catalog.mjs';
 import { validateResult, Workflow } from '../frontend/workflow.mjs';
 
-const values = path => path === 'desktop.capabilities.list' ? { bridgeVersion: 2, capabilities: [] }
+const values = path => path === 'assistant.agents.list' ? {items:[],defaultAgentKey:'helper'} : path === 'desktop.capabilities.list' ? { bridgeVersion: 2, capabilities: [] }
   : ['auth.isAvailable', 'desktop.capabilities.has'].includes(path) ? true
   : path.endsWith('.list') ? { items: [] }
   : path === 'desktop.theme.get' ? { themeMode: 'system', resolvedTheme: 'light' }

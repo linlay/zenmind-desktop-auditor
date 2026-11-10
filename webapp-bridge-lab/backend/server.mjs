@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import { acceptEcho } from './websocket.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const READ = new Set(['connector.list', 'connector.describe', 'skill.list', 'skill.describe',
+const READ = new Set(['assistant.agents.list', 'connector.list', 'connector.describe', 'skill.list', 'skill.describe',
   'kanban.boards.list', 'kanban.issues.list', 'kanban.issues.get', 'artifact.list', 'artifact.get', 'artifact.read']);
 const WRITE = new Set(['assistant.upload', 'assistant.resource.read', 'assistant.steer', 'assistant.send', 'assistant.interrupt', 'assistant.submit', 'assistant.chat', 'assistant.execute', 'assistant.stop', 'connector.invoke']);
 const RESERVED = new Set(['assistant.image', 'artifact.open', 'artifact.saveAs', 'automation.list', 'automation.get',

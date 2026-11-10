@@ -33,7 +33,7 @@ npm run build -- --desktop-repo C:\Projects\zenmind-desktop
 
 ## 配置测试 Agent 与技能
 
-默认不固定 Agent，也不声明测试技能，使用 Desktop 默认助手。请在「Desktop → 设置 → 网页应用 → Bridge Lab → 测试 Agent」中选择智能体，保存后重新打开应用。页面「刷新配置」只通过现有 `desktop.app.getUserConfig()` 读取当前应用配置，不提供智能体选择接口。包不会安装或创建 Agent / 技能。需要预设实际 Agent 或声明附加技能时：
+默认不固定 Agent，也不声明测试技能，使用 Desktop 默认助手。可在页面「02 智能体」选择实际智能体，也可保持「使用默认智能体」。列表由 `assistant.agents.list()` 返回；省略 agentKey 时沿用 Desktop 用户配置、固定 Copilot 和默认助手的既有规则。页面选择只作用于新请求，不修改 Desktop 设置。包不会安装或创建 Agent / 技能。需要预设实际 Agent 或声明附加技能时：
 
 ```sh
 npm run build -- --desktop-repo /path/to/zenmind-desktop --agent nativeAgentKey --skill existing-skill-id
@@ -41,15 +41,15 @@ npm run build -- --desktop-repo /path/to/zenmind-desktop --agent nativeAgentKey 
 
 `--skill` 可以重复，受 Desktop manifest 的数量和命名约束。应用更新使用固定 ID；导入新版 ZIP 后重新启动应用。
 
-`--agent` 设置测试 Agent 字段的包内默认值；`--skill` 才启用固定 Copilot 的附加技能声明（未传 `--agent` 时其 Agent 为 `desktopAssistant`）。也可以在 Desktop 的网页应用用户配置中修改「测试 Agent」。`assistant.execute` 需要支持 `result_submit` 的 Native Agent；返回 `assistant_agent_unsupported` 时页面会提示切换，宿主不自动换 Agent。执行请求严格使用 `message`、`input?`、`outputSchema`，不发送 `skillIds`、`agentKey`。技能页加载实际目录与当前 Agent 的挂载状态，不需要包内声明；聊天不选附加引用时发送空数组，使用智能体自身配置。只有包内声明的附加引用可以在聊天技能控件中手动附加，未声明的目录条目只展示挂载状态。
+`--agent` 设置测试 Agent 字段的包内默认值；`--skill` 才启用固定 Copilot 的附加技能声明（未传 `--agent` 时其 Agent 为 `desktopAssistant`）。也可以在 Desktop 的网页应用用户配置中修改「测试 Agent」。`assistant.execute` 需要支持 `result_submit` 的 Native Agent；返回 `assistant_agent_unsupported` 时页面会提示切换，宿主不自动换 Agent。执行请求使用 `message`、`input?`、`outputSchema` 和可选 `agentKey`，不发送 `skillIds`。技能页加载实际目录与当前 Agent 的挂载状态，不需要包内声明；聊天不选附加引用时发送空数组，使用智能体自身配置。只有包内声明的附加引用可以在聊天技能控件中手动附加，未声明的目录条目只展示挂载状态。
 
-`0.3.1` 同时修正 Desktop 原有 `skill.list/describe` 的查询语义和网页交互：不再按包内 Copilot 引用过滤只读技能目录；当前 Agent 的选择仍在 Desktop 设置进行，没有新增 Agent 选择接口。先在 Desktop checkout 执行 `npm run build:main:prepared` 并重启使用该构建产物的 Desktop，再导入新版 ZIP、重新启动 Bridge Lab。仅更新 ZIP 不会更新已运行的旧宿主。默认包无需 `--skill` 即可加载技能，空目录显示真实空列表，错误直接展示。
+`0.3.1` 同时修正 Desktop 原有 `skill.list/describe` 的查询语义和网页交互：不再按包内 Copilot 引用过滤只读技能目录；该版本的 Agent 选择在 Desktop 设置进行；当前版本已补充页面列表与选择能力。先在 Desktop checkout 执行 `npm run build:main:prepared` 并重启使用该构建产物的 Desktop，再导入新版 ZIP、重新启动 Bridge Lab。仅更新 ZIP 不会更新已运行的旧宿主。默认包无需 `--skill` 即可加载技能，空目录显示真实空列表，错误直接展示。
 
 ## 关联流程与前置条件
 
-页面继续使用现有 SDK 方法，宿主仅调整技能查询与其能力声明。前端直接从同源 Gateway 导入 SDK；受管 Node 后端用 Desktop 注入的地址和 token 初始化 `createBackendClient`。它们属于同一个应用实例，可以读取彼此创建的 Chat；OS 界面操作只由前端发起，后端选择框只列已实现的数据方法。
+页面使用正式 SDK 方法，智能体列表与可选 agentKey 需要匹配新版 Desktop 宿主。前端直接从同源 Gateway 导入 SDK；受管 Node 后端用 Desktop 注入的地址和 token 初始化 `createBackendClient`。它们属于同一个应用实例，可以读取彼此创建的 Chat；OS 界面操作只由前端发起，后端选择框只列已实现的数据方法。
 
-1. 在 Desktop 设置里选择测试 Agent，再点击「检查连接」。产物任务需要文件写入与 `artifact_publish`；结构化执行需要 `result_submit`。想串起整个流程，Agent 必须同时具备这些工具；否则分别验收对应功能。更改应用设置可能重启实例，旧 Chat 授权不能继续使用。
+1. 在「02 智能体」选择测试 Agent，或使用默认智能体，再点击「检查连接」。产物任务需要文件写入与 `artifact_publish`；结构化执行需要 `result_submit`。想串起整个流程，Agent 必须同时具备这些工具；否则分别验收对应功能。更改应用设置可能重启实例，旧 Chat 授权不能继续使用。
 2. 点击「生成测试产物」。页面明确请求创建并发布 `bridge-lab-verification.md`，使用一次真实后台聊天，等待对应 Run 完成后自动读取产物清单。不会根据回复里的链接猜 ID，不会因超时自动重发任务。
 3. 从返回的 Chat 和产物清单选择文件。页面完整显示 `chatId + runId + artifactId`，支持下一页；相同 artifactId 在不同 Run 中分别列出。普通聊天、execute 的 output 和 `@chat` 路径均不代表存在已发布文件。
 4. 点击「验证元数据和内容」。后续 get/read/预览/另存为都使用所选文件的精确三元组。空列表属于正常查询结果，提示回到生成步骤；不会用示例 ID 调用。预览与另存为始终通过前端 SDK，即使文件由后端聊天产生。
@@ -129,3 +129,5 @@ macOS 可执行本机 Electron 验证；Windows 同样需要在原生 Windows �
 [接入指南](docs/integration-guide.md) · [测试指南](docs/testing-guide.md) · [API 参考](docs/api-reference.md)。构建时附带指定 Desktop checkout 的官方 SDK 指南并记录其版本与 SHA256。
 
 产物读取限制：完整文本最多读取 1 MiB并保留于内存，默认输出/详情展示前 8 KiB；仅完整且满足请求体积限制的原文才能带入 execute。默认报告不包含请求和业务结果。
+
+菜单依次为「00 总览」「01 准备」「02 智能体」「03 连接器」等。每个菜单在悬停或键盘聚焦时显示感叹号；触屏直接显示。点击打开 bridge 说明 dialog，展示该菜单的接口列表、参数含义和卡片示例，预留接口标注未实现。查看说明不调用接口，支持关闭按钮和 Escape。

@@ -2054,3 +2054,6 @@ await desktop.copilot.close();
 `assistant.steer({runId,message,requestId?,steerId?})`、`assistant.send({runId,message,requestId?})`、`assistant.submit({runId,awaitingId,submitId?,param?|params?})` 仅操作本实例的后台 Run。send 返回 mailbox 回执，不代表任务完成；新回执 Run 不自动取得订阅资格。`assistant.interrupt({runId})` 等同 stop。所有控制使用固定根 Agent 和 Primary 通道。
 
 新增卡片均为手动调用。Lab 上传卡片用 text 生成真实文本 Blob，方便前后端使用相同样本；业务 SDK 直接接受 Blob。resource 测试页保持 1 MiB 展示限额，宿主支持 16 MiB。
+
+
+智能体选择（Desktop）：`assistant.agents.list()` 返回 `{items:[{agentKey,name,role}],defaultAgentKey}`。聊天、execute、upload 和 skill.list/describe 可传可选 agentKey；省略时沿用宿主用户配置、固定 Copilot、默认助手的既有选择规则，显式指定必须来自当前可用列表。Lab 下拉框选择用于前后端的新请求，已有 Run 的控制 owner 不变。智能体缺少 result_submit 时 execute 如实失败，不自动换智能体。该能力尚未在 Compose 托管桥实现。

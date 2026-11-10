@@ -9,3 +9,5 @@
 | [DAG Lab](dag-lab/README.md) | 浏览器直接访问、Platform 智能体 DAG、分支汇总与运行记录 |
 
 各子项目独立安装依赖、构建并导入 ZIP。安装包位于各自的 `build/`，测试证据位于 `test-output/`；两者以及依赖、环境配置和凭据不提交 Git。真实模型、账号及 Windows/macOS 实机能力按各项目验收指南分别验证。
+
+- [Agent Lab](agent-lab/README.md)：独立的 agent 契约验证应用，提供聊天、Executor、运行和文件页面；构建 `agent-lab/build/agent-lab.zip` 后导入 Desktop。现有 Bridge Lab 保留。

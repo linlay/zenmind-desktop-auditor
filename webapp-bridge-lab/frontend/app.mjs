@@ -1,4 +1,4 @@
-import { catalog, groups, findMethod, isReservedStub, listMethods } from './catalog.mjs';
+import { catalog, groups, findMethod, isReservedStub, listMethods, menuBridgeInfo } from './catalog.mjs';
 import { buildReport } from './report.mjs';
 import { runSuite, withTimeout, websocketEcho, resultStatus, errorStatus } from './suite.mjs';
 import { Workflow, artifactKey, BACKEND_METHODS, WRITES, validateResult } from './workflow.mjs';
@@ -19,8 +19,8 @@ function errorObject(error, action) { return { code: error.code || (error.name =
   message: error.message || String(error), ...(error.details === undefined ? {} : { details: error.details }) }; }
 function localError(code, message) { return Object.assign(Error(message), { code }); }
 const recovery = {
-  assistant_agent_unavailable: '所选智能体不存在或服务不可用。请在 Desktop → 设置 → 网页应用 → Bridge Lab → 测试 Agent 中重新选择，并检查 Agent Platform 是否运行。',
-  assistant_agent_unsupported: '当前智能体不支持结构化执行。请在 Desktop → 设置 → 网页应用 → Bridge Lab → 测试 Agent 中选择带 result_submit 工具的 Native Agent。',
+  assistant_agent_unavailable: '所选智能体不存在或服务不可用。请刷新智能体列表并重新选择，并检查 Agent Platform 是否运行。',
+  assistant_agent_unsupported: '当前智能体不支持结构化执行。请选择带 result_submit 工具的 Native Agent。',
   assistant_execute_unavailable: '当前宿主没有执行通道，请升级并重启 Desktop。',
   assistant_failed: '智能体调用失败，请检查 Desktop 对话诊断、模型配置及包内声明的技能是否存在。',
   manual_only: '后端调用尚未启用，请勾选当前区域的「允许本次手动后端调用产生副作用」。',
@@ -74,10 +74,34 @@ function renderSummary() {
 }
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text) el.textContent = text; return el; }
 function emptyOption(text) { const option = node('option', '', text); option.value = ''; return option; }
+function openMenuBridgeHelp(id, title, number) {
+  const dialog = $('#menu-help-dialog');
+  $('#menu-help-title').textContent = number + ' ' + title + ' · Bridge 说明';
+  const body = $('#menu-help-body'); body.replaceChildren();
+  body.append(node('p', 'hint', id === 'backend' ? '仅限 Desktop 托管后端，凭据由宿主注入；原生界面与认证接口不向后端开放。' : '下方为该菜单相关的 SDK 接口与参数说明。查看说明不会调用任何接口。'));
+  for (const method of menuBridgeInfo(id)) {
+    const item = node('article', 'bridge-help-method'); item.append(node('h3', '', method.path));
+    item.append(node('p', 'hint', method.note || (method.mode === 'reserved' ? '预留接口，当前宿主尚未实现，调用返回 not_implemented。' : '使用当前应用实例身份调用，结果与错误在对应卡片展示。')));
+    if (method.parameters.length) {
+      const list = node('dl', 'bridge-help-parameters');
+      for (const param of method.parameters) list.append(node('dt', '', param.name), node('dd', '', param.description));
+      item.append(list);
+    } else item.append(node('p', 'hint', method.mode === 'reserved' ? '尚无可调用的业务参数契约。' : '不需要业务参数。'));
+    if (method.mode !== 'reserved') item.append(node('pre', 'output', printable(method.args)));
+    body.append(item);
+  }
+  dialog.showModal();
+}
 function buildUI() {
+  $('#menu-help-close').onclick = () => $('#menu-help-dialog').close();
   for (const [id, title, number] of groups) {
     const link = node('a', id === 'overview' ? 'active' : ''); link.href = '#' + id;
-    link.append(node('span', '', number), document.createTextNode(title)); $('#navigation').append(link);
+    link.append(node('span', '', number), document.createTextNode(title));
+    const row = node('div', 'nav-row');
+    const help = node('button', 'nav-help', '!'); help.type = 'button'; help.dataset.menu = id;
+    help.setAttribute('aria-label', title + ' bridge 接口说明'); help.setAttribute('aria-haspopup', 'dialog');
+    help.onclick = () => openMenuBridgeHelp(id, title, number);
+    row.append(link, help); $('#navigation').append(row);
     link.addEventListener('click', () => { $('#navigation .active')?.classList.remove('active'); link.classList.add('active'); });
     if (['overview', 'workflow', 'assistant', 'backend'].includes(id)) continue;
     const section = node('section', 'section'); section.id = id;
@@ -196,6 +220,7 @@ function blockReason(path, args, channel = 'page') {
   return '';
 }
 function refreshAvailability() {
+  $('#assistant-agent').disabled = state.batch || state.workflowBusy || Boolean(state.modelCall) || state.controllers.has('execute');
   for (const def of catalog) {
     const view = state.cards.get(def.path); if (!view) continue;
     const channel = defaultChannel(def.path), id = channel === 'page' ? def.path : 'backend.' + def.path;
@@ -394,6 +419,7 @@ function validateExecute(input) {
   return input;
 }
 async function invokePage(path, args, { signal } = {}) {
+  args = selectedAgentArgs(path, args);
   const method = findMethod(state.sdk, path);
   if (!method) throw localError('sdk_unavailable', 'SDK 未提供 ' + path);
   if (path === 'assistant.upload') { const { text, ...input } = args; if (typeof text !== 'string') throw localError('invalid_args', '请输入上传文本 text'); return method({ ...input, file: new Blob([text], { type: 'text/plain' }) }, { signal }); }
@@ -409,6 +435,7 @@ async function api(endpoint, input, signal) {
   return payload;
 }
 async function invokeBackend(action, args, { signal, readonly = false } = {}) {
+  args = selectedAgentArgs(action, args);
   const allowSideEffects = !readonly && $('#backend-writes').checked;
   const payload = await api('/api/backend-call', { action, args, allowSideEffects }, signal);
   return payload.result;
@@ -511,12 +538,23 @@ function updateIdentity() {
   const context = state.contexts[currentChannel()];
   $('#chat-identity').textContent = `chatId ${context.chatId || '—'} · runId ${context.runId || '—'} · cursor ${context.cursor || 0}`;
 }
+function selectedAgentArgs(path, args) {
+  const agentKey = $('#assistant-agent').value;
+  return agentKey && ['assistant.chat', 'assistant.execute', 'assistant.upload', 'skill.list', 'skill.describe'].includes(path) ? { ...args, agentKey } : args;
+}
 async function refreshAgent() {
+  const select = $('#assistant-agent');
+  const previous = select.value;
   try {
-    const values = await invokePage('desktop.app.getUserConfig', {});
-    const key = values.agent || state.info?.defaultAgent || state.info?.copilot?.agentKey || 'Desktop 默认助手';
-    $('#agent-status').textContent = `当前应用配置：${key}。请在 Desktop → 设置 → 网页应用 → Bridge Lab → 测试 Agent 中切换智能体，保存后重新打开应用。网页仅使用现有 SDK 读取配置。`;
-  } catch (error) { $('#agent-status').textContent = printable(failure(error, 'desktop.app.getUserConfig')); }
+    const result = await invokePage('assistant.agents.list', {});
+    validateResult('assistant.agents.list', result, {});
+    const name = result.items.find(item => item.agentKey === result.defaultAgentKey)?.name || result.defaultAgentKey;
+    const defaultOption = node('option', '', '使用默认智能体 · ' + name); defaultOption.value = '';
+    const options = result.items.map(item => { const option = node('option', '', item.name + ' · ' + item.agentKey); option.value = item.agentKey; return option; });
+    if (previous && !result.items.some(item => item.agentKey === previous)) { const unavailable = node('option', '', previous + ' · 已不可用'); unavailable.value = previous; unavailable.disabled = true; options.push(unavailable); }
+    select.replaceChildren(defaultOption, ...options); select.value = previous;
+    $('#agent-status').textContent = `默认智能体：${name}（${result.defaultAgentKey}）。可在「Agent 聊天与执行」中选择；仅影响新请求，已有 Run 保留原智能体。结构化执行需要 result_submit。`;
+  } catch (error) { $('#agent-status').textContent = printable(failure(error, 'assistant.agents.list')); }
 }
 async function loadArtifacts({ more = false, chatId = state.workflow.selectedChatId, channel = currentChannel() } = {}) {
   if (state.artifactBusy) return;
@@ -796,7 +834,13 @@ function wire() {
     $('#backend-writes').checked = $('#agent-backend-writes').checked = event.target.checked;
     refreshAvailability();
   };
-  $('#agent-refresh').onclick = () => void refreshAgent();
+  $('#agent-refresh').onclick = $('#assistant-agent-refresh').onclick = () => void refreshAgent();
+  $('#assistant-agent').onchange = () => {
+    for (const cache of [state.results, state.backendResults]) for (const key of ['assistant.upload', 'skill.list', 'skill.describe']) delete cache[key];
+    $('#chat-skills').replaceChildren();
+    updateEditors(); refreshAvailability();
+    void refreshAgent();
+  };
   $('#ws-connect').onclick = wsConnect; $('#ws-send').onclick = wsSend; $('#ws-close').onclick = () => state.websocket?.close(1000, 'Lab test complete');
   window.addEventListener('pagehide', () => { for (const controller of state.subscriptions.values()) controller.abort(); for (const controller of state.controllers.values()) controller.abort(); state.websocket?.close(); });
 }

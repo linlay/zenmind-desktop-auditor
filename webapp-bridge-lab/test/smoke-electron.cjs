@@ -82,6 +82,7 @@ app.whenReady().then(async () => {
       else if (action === 'kanban.boards.list') result = { items: [], projects: [], cloudAvailable: false };
       else if (action === 'kanban.issues.list') result = { items: empty ? [] : [{ id: 'issue-1', title: 'First issue' }, { id: 'issue-2', title: 'Second issue' }], cloudAvailable: false };
       else if (action === 'kanban.issues.get') { assert.ok(['issue-1', 'issue-2'].includes(args.issueId)); result = { issue: { id: args.issueId, title: args.issueId === 'issue-1' ? 'First issue' : 'Second issue' } }; }
+      else if (action === 'assistant.agents.list') result = {items:[{agentKey:'helper',name:'Helper'},{agentKey:'executor',name:'Executor'}],defaultAgentKey:selectedAgent || 'helper'};
       else if (action === 'assistant.chat') {
         assert.deepEqual(args.skillIds || [], []); sequence++;
         const chat = { chatId: 'chat-' + sequence, runId: 'run-' + sequence, wantsFiles: args.message.includes('artifact_publish'), published: false, terminal: !args.background };
@@ -99,9 +100,9 @@ app.whenReady().then(async () => {
         return;
       } else if (action === 'assistant.stop') { const chat = [...chats.values()].find(chat => chat.runId === args.runId); assert.ok(chat); chat.interrupted = true; result = { stopped: true }; }
       else if (action === 'assistant.execute') {
-        if (selectedAgent !== 'executor') return send(res, null, { code: 'assistant_agent_unsupported', message: 'result_submit unavailable' });
+        if ((args.agentKey || selectedAgent) !== 'executor') return send(res, null, { code: 'assistant_agent_unsupported', message: 'result_submit unavailable' });
         if (holdExecute) { res.on('close', () => { cancelledExecutions++; }); return; }
-        assert.equal(args.outputSchema.type, 'object'); assert.equal(args.skillIds, undefined); assert.equal(args.agentKey, undefined);
+        assert.equal(args.outputSchema.type, 'object'); assert.equal(args.skillIds, undefined); if(args.agentKey !== undefined) assert.equal(args.agentKey,'executor');
         const chatId = 'execute-' + (++sequence); chats.set(chatId, { chatId, published: false });
         result = { chatId, status: 'success', output: { amount: 128 } };
       } else if (action.startsWith('artifact.')) {
@@ -220,7 +221,7 @@ app.whenReady().then(async () => {
   holdEvents = false; await click('stop-run'); await until(() => calls.filter(row => row.action === 'assistant.stop').length > stopBefore, 'stop');
   check('background Run controls only use returned background identities; unsubscribe does not stop a Run');
   await click('execute-run'); await until(() => disabled('execute-run').then(value => !value), 'unsupported execute');
-  assert.match(await content('execute-result'), /Desktop → 设置/);
+  assert.match(await content('execute-result'), /请选择.*Native Agent/);
   const { writeWebappUserConfigValues } = require(path.join(desktop, 'dist-electron/main/modules/webs/webapps/store.js'));
   assert.equal(writeWebappUserConfigValues(app, manifest.id, { agent: 'executor' }).ok, true); selectedAgent = 'executor';
   await click('agent-refresh'); await until(() => content('agent-status').then(value => value.includes('executor')), 'configured agent');
@@ -262,7 +263,7 @@ app.whenReady().then(async () => {
   const backendPrepared = [...chats.values()].filter(chat => chat.wantsFiles).at(-1).chatId;
   await click('artifact-inspect'); await until(() => calls.some(row => row.transport === 'backend' && row.action === 'artifact.read' && row.args.chatId === backendPrepared), 'backend prepared content');
   await click('artifact-preview'); await until(() => calls.some(row => row.transport === 'page' && row.action === 'artifact.open' && row.args.chatId === backendPrepared), 'page preview of backend chat');
-  assert.ok(calls.every(row => !row.action.startsWith('assistant.agents.')));
+  assert.ok(calls.filter(row => row.action.startsWith('assistant.agents.')).every(row => row.action === 'assistant.agents.list'));
   check('both SDKs share only app-owned Chat results; backend preparation can be read and previewed via the page without new host interfaces');
   await click('ws-connect'); await until(() => content('ws-state').then(value => value === '已连接'), 'WS connected');
   await click('ws-send'); await until(() => content('ws-result').then(value => value.includes('收到：Hello')), 'WS echo'); await click('ws-close'); await until(() => content('ws-state').then(value => value === '已关闭'), 'WS closed');
@@ -278,6 +279,22 @@ app.whenReady().then(async () => {
   await click('export-report'); await until(() => !!download, 'report download'); const report = JSON.parse(fs.readFileSync(await download));
   assert.equal(report.contract.sdkSha256.length, 64); assert.equal(report.workflow, undefined); assert.equal(report.events, undefined); assert.equal(report.includesDetails, false); assert.ok(report.oneClickTest.checks.some(check => check.method === 'desktop.chat.open' && !check.executed)); assert.ok(report.records.every(record => !('result' in record) && !('request' in record) && !('error' in record))); assert.ok(!JSON.stringify(report).includes('synthetic-backend-grant'));
   check('default report includes the complete test plan and diagnostics while excluding business bodies and backend credentials');
+  assert.deepEqual(await js('[...document.querySelectorAll("#navigation a")].slice(0,4).map(e=>e.textContent)'), ['00总览','01准备','02智能体','03连接器']);
+  assert.equal(await js('document.querySelectorAll(".nav-help").length===document.querySelectorAll("#navigation a").length'),true);
+  for(const group of ['overview','workflow','assistant','connector','skill','artifact','kanban','config','appearance','native','auth','reserved','backend']) {
+    await js(`document.querySelector('.nav-help[data-menu="${group}"]').click()`);
+    assert.equal(await js('document.getElementById("menu-help-dialog").open'),true);
+    assert.ok((await content('menu-help-body')).includes('.'));
+    await click('menu-help-close');
+  }
+  await js('document.querySelector(".nav-help[data-menu=assistant]").click()');
+  assert.match(await content('menu-help-body'), /assistant.agents.list/);assert.match(await content('menu-help-body'), /agentKey/);
+  fs.writeFileSync(path.join(output,'bridge-menu-help.png'),(await win.webContents.capturePage()).toPNG());await click('menu-help-close');
+  await setValue('assistant-agent','executor');
+  await click('execute-run');await until(()=>disabled('execute-run').then(value=>!value),'explicit agent execute');
+  assert.ok(calls.some(row=>row.action==='assistant.execute'&&row.args.agentKey==='executor'));
+  await setValue('assistant-agent','');
+  check('ordered menu help dialogs describe bridge parameters and selected Agent reaches new execute requests');
   const preview = createLabServer({ preview: true, frontendRoot: path.join(bundle, 'frontend') }); const previewOrigin = await listen(preview);
   await win.loadURL(previewOrigin); await until(() => js('document.body.dataset.ready === "true"'), 'preview ready');
   assert.equal(await js('document.body.dataset.disconnected'), 'true'); assert.equal(await disabled('prepare-artifacts'), true); await preview.closeLab();

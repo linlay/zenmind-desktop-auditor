@@ -27,9 +27,9 @@
       <details class="contract-details"><summary>契约版本与能力覆盖</summary><pre id="contract-info">尚未读取构建信息</pre><div id="coverage-info"></div></details>
     </section>
     <section id="workflow" class="section">
-      <div class="section-heading"><div><span class="eyebrow">WORKFLOW / 关联验收</span><h2>从聊天到真实产物</h2><p>先准备数据，再沿同一份返回结果测试下游。前后端共享本应用的 Chat，原生预览和另存为由前端发起。</p></div><label class="inline-label">调用通道<select id="agent-channel"><option value="page">前端 SDK</option><option value="backend">后端 SDK</option></select></label></div>
+      <div class="section-heading"><div><span class="eyebrow">01 / PREPARE</span><h2>准备</h2><p>先准备数据，再沿同一份返回结果测试下游。前后端共享本应用的 Chat，原生预览和另存为由前端发起。</p></div><label class="inline-label">调用通道<select id="agent-channel"><option value="page">前端 SDK</option><option value="backend">后端 SDK</option></select></label></div>
       <div class="notice"><div id="agent-status" role="status">正在读取智能体配置…</div><div class="button-row"><button id="agent-refresh">刷新配置</button></div><label id="agent-backend-consent" class="check-label" hidden><input id="agent-backend-writes" type="checkbox">允许本次手动后端调用产生副作用</label></div>
-      <ol class="workflow-steps"><li>检查连接并在 Desktop 设置选择有文件工具的 Agent</li><li>发起产物任务，等待文件实际发布</li><li>选择返回的 Chat 和文件，验证元数据、内容及预览</li></ol>
+      <ol class="workflow-steps"><li>检查连接并选择有文件工具的 Agent</li><li>发起产物任务，等待文件实际发布</li><li>选择返回的 Chat 和文件，验证元数据、内容及预览</li></ol>
       <div class="workspace-grid">
         <article class="panel"><h3>1 · 准备测试数据</h3><p class="hint">使用上方选择的调用通道。此步骤会调用模型；产物需要 file_write 与 artifact_publish，通常使用 GENERAL / CODER。EXECUTOR 不一定具备发布工具。</p>
           <label for="artifact-prompt">文件任务（可修改）</label><textarea id="artifact-prompt" rows="5">请创建可下载的 Markdown 文件 bridge-lab-verification.md，正文包含标题“Bridge Lab 验收”、一张含商品 A 80 元与商品 B 48 元的表格，以及总额 128 元。请实际写入当前 Chat 的文件，再调用 artifact_publish 发布，最终回复使用工具返回的真实下载链接。如果没有文件写入或发布工具，请明确说明，不要仅在回复里展示正文，也不要编造文件链接或标识。</textarea>
@@ -42,7 +42,7 @@
       </div>
     </section>
     <section id="assistant" class="section">
-      <div class="section-heading"><div><span class="eyebrow">02 / ASSISTANT</span><h2>Agent 聊天与执行</h2><p>使用上方关联流程选择的调用通道；原生方法卡片始终由前端调用。</p></div></div>
+      <div class="section-heading"><div><span class="eyebrow">02 / ASSISTANT</span><h2>智能体</h2><p>使用上方关联流程选择的调用通道；原生方法卡片始终由前端调用。</p></div><div class="toolbar"><label class="inline-label">智能体<select id="assistant-agent"><option value="">使用默认智能体</option></select></label><button id="assistant-agent-refresh">刷新智能体</button></div></div>
       <div class="workspace-grid">
         <article class="panel"><div class="panel-heading"><h3>聊天测试</h3><span class="badge">QUERY</span></div>
           <label for="chat-message">消息</label><textarea id="chat-message" rows="4">请只回复：Bridge Lab 连接成功。</textarea>
@@ -83,5 +83,6 @@
     </section>
     <footer class="page-footer"><span>BRIDGE LAB / ZENMIND DESKTOP AUDITOR</span><span>真实调用 · 明确结果 · 可导出证据</span></footer>
   </main>
+<dialog id="menu-help-dialog" aria-labelledby="menu-help-title"><div class="bridge-help-header"><h2 id="menu-help-title"></h2><button id="menu-help-close" aria-label="关闭 bridge 说明">关闭</button></div><div id="menu-help-body"></div></dialog>
 </body>
 </html>
