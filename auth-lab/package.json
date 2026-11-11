@@ -1,0 +1,23 @@
+{
+  "name": "@auth-lab/app",
+  "version": "0.1.11",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "test": "node --test test/*.test.mjs",
+    "configure": "node scripts/configure.mjs",
+    "configure-broker": "node scripts/configure-broker.mjs"
+  },
+  "dependencies": {
+    "jose": "6.2.16"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.7",
+    "jszip": "3.10.1"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "sessionSeconds": 3600,
+  "desktop": {
+    "issuer": "https://eiam.qiuer.net/auth/oidc/62F295C3C382499EA2124E6C8B080B8E",
+    "algorithms": [
+      "RS256"
+    ],
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj4uJ5IOD52X+qQwKa/rf\nctviCqrKTQWFsEKUDo9EDAH5KUziS/1O5qWe3zhtfCBGAEcCnELW3bpQHaSgghaz\nVVXesdnGqIDQZSbMuemt7UXLsp72qDppR/x94o67srTo9Z3Wz0MsrR3/dxArFZuY\nGW7v8z8BK1UFLLSgA+LJu0YEcrhgVMiMtugOcjZ5NbRGXpo4fFbnIMtslr6xhOpA\n7zB8ycUjomHZlbakbYQU7tnHuj3Oyoe9BNUEueSVyPTiK3rwUaOl1EAJ8oBd380x\nVi01yLRriIIQPmCY2r9/RZJ8mUFFn6DlsF3rg5aPuVGHkCJIXAYrOdiruNcEcOn8\nFwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "audienceSha256": [
+      "2384743903da60d014ed3763823341ff80bd86aa6fb4167d6c61e5412a609334"
+    ]
+  },
+  "allowedUsers": []
+}

@@ -1,0 +1,15 @@
+{
+  "sessionSeconds": 3600,
+  "desktop": {
+    "issuer": "https://eiam.gtjaqh.net/auth/oidc/5CA69847F97E4DFFBAA67966CC4ED49F",
+    "algorithms": [
+      "RS256"
+    ],
+    "jwksUri": "https://eiam.gtjaqh.net/auth/oidc/5CA69847F97E4DFFBAA67966CC4ED49F/jwk",
+    "audienceSha256": [
+      "5cb13f877a34647736546d3a3a8d31289ab232fe49218d299260adcb5d7f9d5b"
+    ]
+  },
+  "allowedUsers": [],
+  "desktopOpenUrl": "cutej://open"
+}

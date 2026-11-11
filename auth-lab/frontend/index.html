@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Auth Lab · 身份验证</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.mjs" type="module"></script>
+</head>
+<body>
+  <header><a class="brand" href="/"><img src="/favicon.svg" alt="" width="32" height="32"><span>Auth Lab</span></a></header>
+  <main>
+    <section id="login-view" class="login-layout">
+      <div class="intro"><div class="eyebrow">ONE IDENTITY, YOUR WORKSPACE</div><h1>从你的身份，<br>进入你的空间。</h1><p class="lead">在浏览器中通过统一认证登录，<br>或使用 Desktop 中已登录的 OneID。</p>
+        <div class="route"><span class="route-icon">01</span><div><strong>浏览器访问</strong><p id="browser-route">正在读取登录配置…</p></div></div>
+        <div class="route"><span class="route-icon">02</span><div><strong>Desktop 访问</strong><p>确认使用当前 OneID，建立本应用会话。</p></div></div>
+      </div>
+      <div class="login-card"><span class="pill" id="environment">正在检查环境</span><h2 id="login-title">登录 Auth Lab</h2><p class="subtle">登录后查看自己的身份，并新增和查看共享便签。</p>
+        <div id="login-status" class="status" role="status" aria-live="polite">正在检查登录状态…</div>
+        <button id="desktop-login" class="primary" hidden>使用 Desktop OneID</button>
+        <button id="oidc-login" class="secondary" hidden>使用统一认证登录</button>
+        <a id="open-desktop" class="primary open-desktop" hidden>打开 Desktop</a>
+        <button id="retry" class="text-button" hidden>重试连接</button>
+        <div id="configuration" class="configuration" hidden></div>
+        <p class="fine">使用你自己的账号登录。这是测试项目，所有登录用户都能看到便签。</p>
+      </div>
+    </section>
+    <section id="workspace-view" hidden>
+      <div class="workspace-heading"><h1>你好，<button id="user-name" class="name-button" title="查看身份与 OIDC 信息" aria-haspopup="dialog"></button></h1><button id="logout" class="secondary compact">退出此应用</button></div>
+      <section class="notes-section" aria-labelledby="notes-title"><div class="card-heading"><div class="list-title"><h2 id="notes-title">便签列表</h2><span id="note-count" class="subtle small"></span></div><button id="new-note" class="primary compact" aria-haspopup="dialog">新建</button></div><p class="subtle small">所有登录用户均可查看，自己的便签标记为“我的”。</p><p id="workspace-status" class="subtle small" role="status" aria-live="polite"></p><p id="notes-empty" class="subtle">还没有便签，点击“新建”写下第一条吧。</p><div class="table-scroll"><table id="notes-table" hidden><thead><tr><th scope="col">记录人</th><th scope="col">时间</th><th scope="col">内容</th></tr></thead><tbody id="notes-list"></tbody></table></div></section>
+    </section>
+    <dialog id="identity-dialog" aria-labelledby="identity-title"><div class="dialog-heading"><h2 id="identity-title">身份与 OIDC 信息</h2><button id="identity-close" class="dialog-close" aria-label="关闭身份信息">×</button></div><dl><dt>姓名</dt><dd id="identity-name"></dd><dt>登录方式</dt><dd id="method"></dd><dt>用户标识（sub）</dt><dd id="subject"></dd><dt>身份来源（iss）</dt><dd id="issuer"></dd><dt>邮箱</dt><dd id="email"></dd><dt>会话到期</dt><dd id="expires"></dd></dl></dialog>
+    <dialog id="note-dialog" aria-labelledby="new-note-title"><div class="dialog-heading"><h2 id="new-note-title">新建便签</h2><button id="note-close" class="dialog-close" aria-label="关闭新建便签">×</button></div><form id="note-form"><label for="note" class="subtle">内容</label><textarea id="note" maxlength="8000" required placeholder="写下想记住的内容…"></textarea><p class="fine">所有登录用户都能看到这条便签。</p><div class="note-footer"><span id="note-status" role="status" aria-live="polite">最多 8000 字</span><div class="dialog-actions"><button id="note-cancel" type="button" class="secondary compact">取消</button><button id="save" type="submit" class="primary compact">保存便签</button></div></div></form></dialog>
+  </main>
+  <footer>Auth Lab <span>OIDC + Desktop OneID</span></footer>
+</body>
+</html>

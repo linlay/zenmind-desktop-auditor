@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "id": "webapp-8c439d21b7a6ef05",
+  "key": "auth-lab",
+  "label": "Auth Lab",
+  "version": "0.1.11",
+  "target": "any",
+  "appConfig": {
+    "purpose": "OIDC and Desktop OneID sign-in verification"
+  },
+  "frontend": {
+    "root": "frontend",
+    "index": "index.html",
+    "routeConfig": {
+      "backendPrefixes": [
+        "/api"
+      ]
+    }
+  },
+  "backend": {
+    "command": {
+      "type": "electron-node",
+      "entry": "backend/server.mjs"
+    },
+    "health": {
+      "type": "http",
+      "path": "/api/health",
+      "startupTimeoutMs": 10000
+    },
+    "shutdownTimeoutMs": 3000
+  }
+}

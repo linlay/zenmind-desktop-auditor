@@ -1,0 +1,7 @@
+# Replace the domain and Desktop's current LAN listener port.
+# Use a certificate trusted by every visiting device. For an internal CA,
+# explicitly install its CA certificate; do not disable TLS verification.
+auth-lab.example.com {
+    tls internal
+    reverse_proxy 192.168.1.20:REPLACE_WITH_DESKTOP_LAN_PORT
+}

@@ -1,0 +1,8 @@
+{
+  "publicOrigin": "https://auth-lab.example.com",
+  "sessionSeconds": 3600,
+  "broker": {
+    "origin": "https://login.example.com",
+    "appId": "6a1f1ea6-eec4-4fca-9a3c-a2e2024f56bd"
+  }
+}
