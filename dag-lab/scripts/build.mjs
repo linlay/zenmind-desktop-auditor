@@ -43,7 +43,7 @@ export async function buildLab(settings) {
   const packageDir = path.join(temp, manifest.id);
   try {
     await mkdir(packageDir);
-    for (const name of ['frontend', 'backend', 'docs']) await cp(path.join(projectRoot, name), path.join(packageDir, name), { recursive: true });
+    for (const name of ['frontend', 'backend', 'docs', 'assets']) await cp(path.join(projectRoot, name), path.join(packageDir, name), { recursive: true });
     await writeFile(path.join(packageDir, 'webapp.json'), JSON.stringify(manifest, null, 2) + '\n');
     await writeFile(path.join(packageDir, 'frontend/build-info.json'), JSON.stringify(info, null, 2) + '\n');
     const checked = validateWebappPackageDirectory(packageDir, manifest);

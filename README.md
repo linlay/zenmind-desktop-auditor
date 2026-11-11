@@ -11,3 +11,5 @@
 各子项目独立安装依赖、构建并导入 ZIP。安装包位于各自的 `build/`，测试证据位于 `test-output/`；两者以及依赖、环境配置和凭据不提交 Git。真实模型、账号及 Windows/macOS 实机能力按各项目验收指南分别验证。
 
 - [Agent Lab](agent-lab/README.md)：独立的 agent 契约验证应用，提供聊天、Executor、运行和文件页面；构建 `agent-lab/build/agent-lab.zip` 后导入 Desktop。现有 Bridge Lab 保留。
+
+所有 WebApp 的应用图标统一位于 `webapp.json` 同级的 `assets/`，支持 `icon.svg` 和 `icon.png`，两者同时存在时优先 SVG。构建 ZIP 时必须包含该目录。Desktop 侧栏优先读取此图标，前端 favicon 独立用于网页。
