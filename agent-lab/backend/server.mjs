@@ -31,7 +31,7 @@ export function createLabServer({loadClient,preview=false}={}){
     if(!body||Object.keys(body).some(key=>!['method','args'].includes(key))||!methods.has(body.method)||!body.args||typeof body.args!=='object'||Array.isArray(body.args))return json(res,400,{ok:false,error:{code:'invalid_args',message:'Unsupported method or arguments'}});
     const sdk=await client();const result=await sdk.agent[body.method](body.args,{signal:controller.signal});return json(res,200,{ok:true,result});
    }
-   const files={'/':'index.html','/index.html':'index.html','/app.mjs':'app.mjs','/session.mjs':'session.mjs','/styles.css':'styles.css'};
+   const files={'/':'index.html','/index.html':'index.html','/app.mjs':'app.mjs','/session.mjs':'session.mjs','/connection.mjs':'connection.mjs','/run-view.mjs':'run-view.mjs','/styles.css':'styles.css'};
    if(preview && req.method==='GET' && Object.hasOwn(files,url.pathname)){const name=files[url.pathname];res.writeHead(200,{'Content-Type':name.endsWith('.mjs')?'text/javascript':name.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff'});return res.end(await readFile(path.join(root,name)));}
    return json(res,404,{ok:false,error:{code:'not_found',message:'Not found'}});
   }catch(error){return json(res,400,{ok:false,error:{code:error.code || 'request_failed',message:error.message || 'Request failed'}});}

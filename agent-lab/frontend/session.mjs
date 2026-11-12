@@ -12,3 +12,11 @@ export function uploadRequest(state, file, agentKey) {
 export function queryRequest(state, message, agentKey, background) {
   return { message, background, ...(agentKey ? { agentKey } : {}), ...(state.chatId ? { chatId: state.chatId } : {}), ...(state.uploads.length ? { uploadIds: [...state.uploads] } : {}) };
 }
+
+// A different selection starts a new Chat; an existing Run keeps its root owner.
+export function selectSessionAgent(state, agentKey) {
+ const next=agentKey || undefined;
+ const changed=state.agentKey!==next;
+ if(changed)Object.assign(state,createSession(),{agentKey:next});
+ return changed;
+}

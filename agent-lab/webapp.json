@@ -3,7 +3,7 @@
   "id": "webapp-a6e71b090d2c48f3",
   "key": "agent-lab",
   "label": "Agent Lab",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "target": "any",
   "appConfig": {
     "purpose": "Agent request, run lifecycle and file verification"
